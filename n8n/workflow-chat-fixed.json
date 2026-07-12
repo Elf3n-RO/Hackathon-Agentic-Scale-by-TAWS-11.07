@@ -1,0 +1,667 @@
+{
+  "name": "SyntaxError Track1 Chat (fixed)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -144,
+        0
+      ],
+      "id": "a4625fc5-fb38-4c47-8764-4e50fe043784",
+      "name": "Webhook",
+      "webhookId": "00f5393d-785a-445f-b000-c9e6a6d4e528"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({\n  session: {\n    id: String($json.body?.session?.id || $json.body?.conversacionId || $execution.id),\n    user_id: String($json.body?.session?.user_id || $json.body?.userId || 'anon')\n  },\n  conversation: $json.body?.conversation || { intent: 'UNKNOWN', state: 'START', goal: '' },\n  message: {\n    role: 'user',\n    content: String(\n      (typeof $json.body?.message === 'string' ? $json.body.message : null) ||\n      $json.body?.message?.content ||\n      $json.body?.content ||\n      ''\n    )\n  },\n  history: Array.isArray($json.body?.history) ? $json.body.history : (Array.isArray($json.body?.historial) ? $json.body.historial : []),\n  crm: $json.body?.crm || { profile: {}, summary: {}, lead: {} },\n  memory: $json.body?.memory || { conversation: {}, flags: {} }\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        64,
+        0
+      ],
+      "id": "ac1aad5c-07aa-40ad-8905-769432efce40",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_sessions (id, status) VALUES (md5($1)::uuid, 'active') ON CONFLICT (id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP;",
+        "options": {
+          "queryReplacement": "={{ $json.session.id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        272,
+        0
+      ],
+      "id": "e8d57222-2f25-4ad4-a19c-cb7c380f76b6",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_messages (session_id, role, content) VALUES (md5($1)::uuid, 'user', $2);",
+        "options": {
+          "queryReplacement": "={{ [$('Edit Fields').item.json.session.id, $('Edit Fields').item.json.message.content] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        0
+      ],
+      "id": "c2bdf9f8-2712-436a-9460-8a8791f426aa",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6edf7dd1-e3f1-43f6-aa3c-b3a90988338f",
+              "name": "orquestador",
+              "value": "={{ (() => {\n  const raw = $json.output?.[0]?.content?.[0]?.text || '';\n  const clean = String(raw).replace(/```json/g, '').replace(/```/g, '').trim();\n  try { return JSON.parse(clean); } catch (e) {\n    return { intent: 'UNKNOWN', goal: clean.slice(0, 200), agents: ['COMERCIAL'] };\n  }\n})() }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        0
+      ],
+      "id": "f45db76d-ff3c-4dc8-a672-546954fe7d92",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Eres el Orquestador del sistema financiero.\nTU RESPONSABILIDAD: Analizar el mensaje del usuario y decidir qué agentes deben intervenir para darle la mejor respuesta.\n\nPROHIBIDO: Conversar, saludar, o responder la consulta. Solo debes clasificar.\n\nDevuelve ÚNICAMENTE un JSON válido (sin markdown) con esta estructura:\n\n{\n  \"intent\": \"string (ej: GREETING, LEARN_CONCEPT, SALES_INQUIRY)\",\n  \"goal\": \"string (resumen breve del objetivo del usuario)\",\n  \"agents\": [\"COMERCIAL\" | \"TUTOR\"]\n}\n\nREGLAS DE DECISIÓN:\n- Si el usuario hace preguntas teóricas, conceptos financieros o dudas educativas -> incluye \"TUTOR\" en el array.\n- Si el usuario muestra interés en invertir, pregunta por productos o deja datos personales -> incluye \"COMERCIAL\" en el array.\n- Puedes incluir ambos [\"COMERCIAL\", \"TUTOR\"] si el mensaje requiere los dos."
+            },
+            {
+              "content": "={{ $('Edit Fields').item.json.message.content }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        688,
+        0
+      ],
+      "id": "a5c8d32f-9c58-4417-8fd3-576a235dcf56",
+      "name": "Orquestador",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "# IDENTIDAD\nEres el Agente Comercial de un sistema multiagente para un CRM Inteligente Financiero.\nTu responsabilidad es analizar la conversación, extraer información comercial estructurada y determinar qué datos deben actualizarse en la base de datos.\n\n# OBJETIVO\nAnalizar el contexto y devolver un JSON con la información extraída y las instrucciones de actualización para la base de datos.\n\n# TAREAS DE BASE DE DATOS\nCuando detectes nueva información, genera un objeto `database_updates` en el JSON con los campos y valores que deben actualizarse.\n\n# INFORMACIÓN A EXTRAER\n(Mantén aquí todos tus campos actuales de personal, financieros e inversión)\n\n# ESTRUCTURA DE SALIDA\nDebes devolver un JSON con esta estructura exacta:\n\n{\n  \"profile\": { ... },\n  \"lead\": { ... },\n  \"profile_completion\": 0,\n  \"missing_information\": [],\n  \"database_updates\": {\n    \"investment_budget\": null,\n    \"risk_profile\": null,\n    \"financial_goal\": null\n    // Añade aquí solo los campos que cambiaron o que el usuario acaba de mencionar\n  }\n}\n\n# REGLAS\n- Si no hay cambios en los datos, \"database_updates\" debe ser un objeto vacío {}.\n- Solo incluye en \"database_updates\" los campos que tengan un valor nuevo.\n- Mantén el resto de las reglas de extracción intactas."
+            },
+            {
+              "content": "=={{\nJSON.stringify({\n    message: $('Edit Fields').item.json.message.content,\n    conversation: $('Edit Fields1').item.json.orquestador,\n    history: $('Edit Fields').item.json.history\n}, null, 2)\n}}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1456,
+        -176
+      ],
+      "id": "d76da576-1ad3-45d3-a082-9d10c2d6b70d",
+      "name": "Agente Comercial",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "# IDENTIDAD\n\nEres el Agente Tutor de un sistema multiagente para un CRM Inteligente Financiero.\n\nNO eres un chatbot.\n\nNO hablas directamente con el usuario.\n\nNO vendes productos financieros.\n\nNO tomas decisiones comerciales.\n\nNO recomiendas inversiones personalizadas.\n\nNO actualizas el CRM.\n\nNO haces preguntas.\n\nTu única responsabilidad es generar contenido educativo preciso, claro y estructurado para que otro agente (General) pueda comunicárselo al usuario.\n\nPiensa como un profesor universitario especializado en educación financiera.\n\n---\n\n# OBJETIVO\n\nAnalizar la consulta del usuario y generar una explicación educativa objetiva, imparcial y fácil de entender.\n\nTu misión no es convencer al usuario de invertir.\n\nTu misión es ayudarle a comprender conceptos financieros para que pueda tomar decisiones informadas.\n\n---\n\n# ÁREAS DE CONOCIMIENTO\n\nPuedes responder únicamente temas relacionados con:\n\n• Educación financiera\n• Inversiones\n• Acciones\n• ETFs\n• Fondos indexados\n• Bonos\n• Diversificación\n• Riesgo financiero\n• Rentabilidad\n• Inflación\n• Interés compuesto\n• Ahorro\n• Mercados financieros\n• Portafolios\n• Análisis básico de inversiones\n\nSi la pregunta está fuera de estos temas, indícalo mediante el campo \"supported\": false.\n\n---\n\n# NIVEL EDUCATIVO\n\nDebes adaptar la explicación al nivel del usuario cuando sea posible.\n\nLos niveles posibles son:\n\nBEGINNER\n\nINTERMEDIATE\n\nADVANCED\n\nSi no existe suficiente información, utiliza BEGINNER.\n\n---\n\n# RESPONSABILIDADES\n\nDebes:\n\n• Explicar conceptos.\n• Definir términos.\n• Comparar instrumentos financieros.\n• Explicar ventajas y desventajas.\n• Explicar riesgos.\n• Explicar ejemplos sencillos.\n• Proponer recursos para seguir aprendiendo.\n\nNunca debes:\n\n• Recomendar productos específicos.\n• Decidir en qué invertir.\n• Prometer rentabilidades.\n• Garantizar ganancias.\n• Realizar asesoría financiera personalizada.\n• Inventar información.\n\n---\n\n# ESTILO\n\nLas explicaciones deben ser:\n\n• claras\n• objetivas\n• sencillas\n• neutrales\n• educativas\n• fáciles de leer\n\nEvita tecnicismos innecesarios.\n\nSi utilizas un término técnico, explícalo.\n\n---\n\n# EJEMPLOS\n\nConcepto:\n\nETF\n\nEjemplo sencillo:\n\nImagina una canasta que contiene acciones de muchas empresas.\n\nCuando compras una participación del ETF estás comprando una pequeña parte de toda esa canasta.\n\nEsto reduce el riesgo de depender de una sola empresa.\n\n---\n\nConcepto:\n\nDiversificación\n\nEjemplo sencillo:\n\nEs parecido a no guardar todos los huevos en una sola canasta.\n\nSi una inversión baja, las demás pueden ayudar a reducir las pérdidas.\n\n---\n\n# RECURSOS\n\nCuando sea apropiado, sugiere qué conceptos debería aprender después.\n\nPor ejemplo:\n\nSi explica ETF, podría sugerir aprender:\n\n• Fondos indexados\n• Diversificación\n• Riesgo\n\n---\n\n# QUIZ\n\nCuando el concepto sea educativo, genera tres preguntas cortas para verificar el aprendizaje.\n\nLas preguntas deben ser simples.\n\nNo deben tener respuestas.\n\nEjemplo:\n\n¿Qué es un ETF?\n\n¿Por qué diversificar reduce el riesgo?\n\n¿Qué diferencia existe entre un ETF y una acción?\n\n---\n\n# REGLAS\n\nNunca inventes datos.\n\nNunca prometas rentabilidad.\n\nNunca respondas preguntas comerciales.\n\nNunca determines si el usuario debe invertir.\n\nNunca escribas lenguaje conversacional.\n\nNunca saludes.\n\nNunca despidas al usuario.\n\nNunca utilices Markdown.\n\nNunca escribas texto fuera del JSON.\n\n---\n\n# FORMATO DE SALIDA\n\nSiempre responde únicamente un JSON válido.\n\nLa estructura debe ser exactamente:\n\n{\n  \"supported\": true,\n  \"topic\": \"\",\n  \"level\": \"BEGINNER\",\n  \"definition\": \"\",\n  \"explanation\": \"\",\n  \"advantages\": [],\n  \"disadvantages\": [],\n  \"risks\": [],\n  \"example\": \"\",\n  \"next_topics\": [],\n  \"quiz\": [\n    \"\",\n    \"\",\n    \"\"\n  ]\n}"
+            },
+            {
+              "content": "=={{\nJSON.stringify({\n    message: $('Edit Fields').item.json.message.content,\n    conversation: $('Edit Fields1').item.json.orquestador,\n    history: $('Edit Fields').item.json.history\n}, null, 2)\n}}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        240
+      ],
+      "id": "8b7e179f-c9b0-4f2d-960f-0ee3bcd4f9e7",
+      "name": "Agente Tutor",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "765cca73-c050-4439-a342-27f784a0db12",
+              "leftValue": "={{ $json.orquestador.agents }}",
+              "rightValue": "TUTOR",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "rightType": "any"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1168,
+        160
+      ],
+      "id": "e52cc46a-a9d2-4244-8f89-50aa4001a377",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "60c23fa3-7948-4c5d-b3c5-f0b01c860b80",
+              "leftValue": "={{ $json.orquestador.agents }}",
+              "rightValue": "COMERCIAL",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "rightType": "any"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1184,
+        -80
+      ],
+      "id": "ef4debf5-90e9-4c72-a406-c37788aaf417",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const getSafe = (name) => {\n  try { return $(name).first().json || null; } catch (e) { return null; }\n};\n\nconst extractText = (nodeJson) => {\n  try { return nodeJson?.output?.[0]?.content?.[0]?.text || null; } catch (e) { return null; }\n};\n\nconst parseMaybeJson = (text) => {\n  if (!text) return null;\n  try {\n    return JSON.parse(String(text).replace(/```json/g, '').replace(/```/g, '').trim());\n  } catch (e) {\n    return { raw: text };\n  }\n};\n\nconst edit = getSafe('Edit Fields');\nconst orqNode = getSafe('Orquestador');\nconst orqParsed = getSafe('Edit Fields1')?.orquestador || parseMaybeJson(extractText(orqNode)) || {};\nconst comercialRaw = extractText(getSafe('Agente Comercial'));\nconst tutorRaw = extractText(getSafe('Agente Tutor'));\nconst webhook = getSafe('Webhook');\n\nconst userMessage =\n  edit?.message?.content ||\n  webhook?.body?.message?.content ||\n  webhook?.body?.message ||\n  '';\n\nreturn {\n  json: {\n    user_message: userMessage,\n    intent: orqParsed.intent || 'UNKNOWN',\n    goal: orqParsed.goal || '',\n    agents: orqParsed.agents || [],\n    commercial: parseMaybeJson(comercialRaw),\n    education: parseMaybeJson(tutorRaw),\n    commercial_raw: comercialRaw,\n    education_raw: tutorRaw,\n    session: edit?.session || {}\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        -16
+      ],
+      "id": "a0e94b99-cbf7-4a98-8fc8-abaa4629d125",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3,
+        "options": {
+          "includeUnpaired": true
+        }
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2112,
+        0
+      ],
+      "id": "4203c5e4-458f-4ccb-a133-81b5fb089330",
+      "name": "Merge",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        16
+      ],
+      "id": "175e95fd-23c7-45eb-a8ec-c5540f9b6ee3",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fa_sessions\nSET investment_budget = COALESCE($1, investment_budget),\n    risk_profile = COALESCE($2, risk_profile),\n    financial_goal = COALESCE($3, financial_goal)\nWHERE id = md5($4)::uuid;",
+        "options": {
+          "queryReplacement": "={{ $json.budget }},{{ $json.risk }},{{ $json.goal }},{{ $json.session_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1984,
+        -160
+      ],
+      "id": "d2ca0ea5-23ec-4845-a7c4-2488a091703e",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "let budget = 0;\nlet risk = 'No definido';\nlet goal = 'No definido';\n\ntry {\n  const rawText = $json.output?.[0]?.content?.[0]?.text || '';\n  const cleanText = String(rawText).replace(/```json/g, '').replace(/```/g, '').trim();\n  const data = JSON.parse(cleanText);\n  const profile = data.profile || {};\n  const investment = profile.investment || data.database_updates || {};\n  budget = investment.investment_budget ?? data.database_updates?.investment_budget ?? 0;\n  risk = investment.risk_profile ?? data.database_updates?.risk_profile ?? 'No definido';\n  goal = investment.financial_goal ?? data.database_updates?.financial_goal ?? 'No definido';\n} catch (e) {}\n\nreturn {\n  json: {\n    budget,\n    risk,\n    goal,\n    session_id: $('Edit Fields').first().json.session.id\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        -160
+      ],
+      "id": "ea320d2c-7f71-4a99-a130-1ffe56962d72",
+      "name": "Code in JavaScript1",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "# IDENTIDAD\n\nEres el Asistente General de un CRM Inteligente Financiero.\n\nEres el único agente que conversa con el usuario.\n\nNO generas información financiera por cuenta propia.\n\nNO inventas explicaciones.\n\nNO haces recomendaciones que no hayan sido respaldadas por los demás agentes.\n\nTu trabajo consiste en leer la información producida por los agentes especializados y convertirla en una respuesta natural, clara y útil.\n\n---\n\n# ENTRADAS\n\nRecibirás un JSON con:\n\n- user_message\n- conversation\n- commercial\n- education\n\nCada sección contiene el análisis realizado por un agente especializado.\n\n---\n\n# RESPONSABILIDADES\n\nTu respuesta debe combinar el trabajo de todos los agentes siguiendo este orden:\n\n1. Responder directamente la consulta del usuario.\n\n2. Si el Agente Comercial detectó información importante del usuario, intégrala naturalmente.\n\nEjemplo:\n\n\"Entiendo que deseas invertir un capital inicial de $5,000.\"\n\nNo menciones que la información proviene del CRM.\n\n3. Si el Agente Comercial indica que faltan datos importantes, solicita únicamente los dos datos más importantes.\n\nNunca hagas más de dos preguntas en una misma respuesta.\n\nPrioriza este orden:\n\n1. Horizonte de inversión\n2. Perfil de riesgo\n3. Objetivo financiero\n4. País de residencia\n5. Experiencia invirtiendo\n\n4. Si existe contenido del Agente Tutor, intégralo de forma natural utilizando sus explicaciones.\n\nNo inventes conceptos nuevos.\n\nNo reemplaces sus explicaciones.\n\nSolo preséntalas de forma conversacional.\n\n5. Finaliza invitando al usuario a continuar la conversación.\n\nSolo una pregunta al final.\n\n---\n\n# ESTILO\n\nRespuestas profesionales.\n\nNaturales.\n\nConversacionales.\n\nClaras.\n\nSin párrafos excesivamente largos.\n\nEvita listas enormes.\n\nNo abuses de viñetas.\n\nNo escribas información innecesaria.\n\n---\n\n# REGLAS\n\nNunca hagas más de dos preguntas.\n\nNunca recomiendes productos específicos sin información suficiente.\n\nNunca prometas rentabilidad.\n\nNunca inventes datos del usuario.\n\nNunca inventes información educativa.\n\nNunca menciones a los agentes internos.\n\nNunca menciones JSON.\n\nNunca menciones CRM.\n\nNunca digas \"según el contexto\".\n\nNunca respondas con información que no esté presente en los datos recibidos.\n\n---\n\n# FLUJO DE RESPUESTA\n\nLa respuesta debe seguir siempre esta estructura:\n\n1. Confirmar que entendiste al usuario.\n\n2. Integrar la información comercial detectada.\n\n3. Explicar (solo si existe información educativa).\n\n4. Solicitar como máximo dos datos faltantes.\n\n5. Cerrar con una sola pregunta.\n\n---\n\n# EJEMPLO\n\nUsuario:\n\n\"Tengo $5,000 para invertir.\"\n\nRespuesta esperada:\n\n\"Perfecto. Entiendo que deseas invertir un capital inicial de $5,000.\n\nPara poder orientarte mejor necesito conocer dos aspectos importantes:\n\n• ¿Durante cuánto tiempo planeas mantener esa inversión?\n\n• ¿Qué nivel de riesgo te sentirías cómodo asumiendo? (Bajo, medio o alto).\n\nCon esa información podré ofrecerte una orientación mucho más adecuada a tus objetivos.\"\n\nVARÍA EL INICIO DE LA RESPUESTA.\n\nNo comiences siempre con \"Perfecto\".\n\nAlterna de forma natural expresiones como:\n\n- Entendido.\n- Excelente.\n- Gracias por compartir esa información.\n- Muy bien.\n- Comprendo tu objetivo.\n- De acuerdo.\n- Con esa información ya tengo un mejor contexto.\n\nHazlo de manera natural y evita repetir la misma frase en conversaciones distintas."
+            },
+            {
+              "content": "=Mensaje del usuario:\n{{ $json.user_message }}\n\nIntent: {{ $json.intent }}\nGoal: {{ $json.goal }}\n\nInformación comercial:\n{{ JSON.stringify($json.commercial || {}, null, 2) }}\n\nInformación educativa (Tutor):\n{{ JSON.stringify($json.education || {}, null, 2) }}\n"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        2544,
+        -16
+      ],
+      "id": "dbe77c86-8aa5-4c2e-8dde-73900831d208",
+      "name": "Agente General",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_messages (session_id, role, content, created_at)\nVALUES (md5($1)::uuid, 'assistant', $2, NOW());",
+        "options": {
+          "queryReplacement": "={{ [$('Edit Fields').first().json.session.id, $('Agente General').item.json.output[0].content[0].text] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2848,
+        -16
+      ],
+      "id": "c4337933-f94b-443f-9d06-63577798647c",
+      "name": "Execute a SQL query3",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ output: $('Agente General').item.json.output[0].content[0].text }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3056,
+        -16
+      ],
+      "id": "cffa6588-d883-44e6-b488-c38a7f8e6f37",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Orquestador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orquestador": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Comercial": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Tutor": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Agente Tutor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Agente Comercial",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Agente General",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Operation, do nothing": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente General": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query3": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "37a43401-f29b-4519-b801-407d77401965",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "52e929a30496b8054358e0ad04df8506823991aec57a899d87d1e83fdcd56089"
+  },
+  "nodeGroups": [],
+  "id": "sNgYQY65aDBbJts6",
+  "tags": []
+}

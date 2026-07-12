@@ -1,37 +1,20 @@
 import type { N8nChatResponse } from '@/types'
 
-const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL as string
-
-const N8N_INVALID_REPLIES = [
-  'workflow was started',
-  'workflow started',
-  'workflow got started',
-  'el workflow fue iniciado',
-]
-
-function isInvalidN8nReply(text: string): boolean {
-  const normalized = text.trim().toLowerCase()
-  if (N8N_INVALID_REPLIES.some((p) => normalized === p || normalized.includes(p))) return true
-  // Expresión n8n sin evaluar
-  if (text.includes('{{') && text.includes('}}')) return true
-  return false
-}
+const configuredUrl = (import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefined)?.trim() || ''
+// En desarrollo usamos proxy local para evitar CORS del navegador
+const webhookUrl = import.meta.env.DEV ? '/api/n8n-chat' : configuredUrl
 
 function isUsableOutput(text: string): boolean {
   const trimmed = text.trim()
-  return trimmed.length > 0 && !isInvalidN8nReply(trimmed)
+  if (!trimmed) return false
+  const lower = trimmed.toLowerCase()
+  if (lower === 'undefined' || lower === 'null') return false
+  if (lower.includes('workflow was started')) return false
+  // Expresión n8n sin evaluar
+  if (/^\{\{\s*.+\s*\}\}$/.test(trimmed)) return false
+  return true
 }
 
-function extractMetadata(obj: Record<string, unknown>): Partial<N8nChatResponse> {
-  return {
-    lead: obj.lead as N8nChatResponse['lead'],
-    accion: obj.accion as string | undefined,
-    fuente: obj.fuente as string | undefined,
-    quiz: obj.quiz as N8nChatResponse['quiz'],
-  }
-}
-
-/** Formato Agente n8n: output[].content[].text */
 function extractTextFromAgentItem(item: unknown): string | null {
   if (!item || typeof item !== 'object') return null
   const obj = item as Record<string, unknown>
@@ -41,44 +24,30 @@ function extractTextFromAgentItem(item: unknown): string | null {
     for (const block of obj.content) {
       if (block && typeof block === 'object') {
         const b = block as Record<string, unknown>
-        if (typeof b.text === 'string' && isUsableOutput(b.text)) {
-          texts.push(b.text.trim())
-        }
+        if (typeof b.text === 'string' && isUsableOutput(b.text)) texts.push(b.text.trim())
       }
     }
     if (texts.length) return texts.join('\n')
   }
 
-  if (typeof obj.text === 'string' && isUsableOutput(obj.text)) {
-    return obj.text.trim()
-  }
-
+  if (typeof obj.text === 'string' && isUsableOutput(obj.text)) return obj.text.trim()
   return null
 }
 
-function extractTextFromAgentOutput(output: unknown): string | null {
-  if (typeof output === 'string') {
-    return isUsableOutput(output) ? output.trim() : null
-  }
-
+function extractFromOutputField(output: unknown): string | null {
+  if (typeof output === 'string') return isUsableOutput(output) ? output.trim() : null
   if (Array.isArray(output)) {
     for (const item of output) {
-      const found = extractTextFromAgentItem(item)
+      const found = extractTextFromAgentItem(item) || extractOutput(item, 1)
       if (found) return found
     }
-    return null
   }
-
   return extractTextFromAgentItem(output)
 }
 
-/** Busca el texto de salida del agente n8n */
 function extractOutput(data: unknown, depth = 0): string | null {
-  if (depth > 8 || data == null) return null
-
-  if (typeof data === 'string') {
-    return isUsableOutput(data) ? data.trim() : null
-  }
+  if (depth > 10 || data == null) return null
+  if (typeof data === 'string') return isUsableOutput(data) ? data.trim() : null
 
   if (Array.isArray(data)) {
     for (const item of data) {
@@ -89,26 +58,17 @@ function extractOutput(data: unknown, depth = 0): string | null {
   }
 
   if (typeof data !== 'object') return null
-
   const obj = data as Record<string, unknown>
 
-  // 1. output como string directo
-  if (typeof obj.output === 'string' && isUsableOutput(obj.output)) {
-    return obj.output.trim()
+  if ('output' in obj) {
+    const fromOutput = extractFromOutputField(obj.output)
+    if (fromOutput) return fromOutput
   }
 
-  // 2. output como array/objeto del Agente (output[0].content[0].text)
-  if (obj.output != null) {
-    const fromAgent = extractTextFromAgentOutput(obj.output)
-    if (fromAgent) return fromAgent
-  }
-
-  // 3. Estructura del agente en la raíz
   const direct = extractTextFromAgentItem(obj)
   if (direct) return direct
 
-  // 4. Buscar en contenedores n8n
-  for (const key of ['json', 'data', 'body', 'result']) {
+  for (const key of ['reply', 'text', 'message', 'response', 'answer', 'content', 'result', 'data', 'body', 'json']) {
     if (key in obj) {
       const found = extractOutput(obj[key], depth + 1)
       if (found) return found
@@ -118,27 +78,30 @@ function extractOutput(data: unknown, depth = 0): string | null {
   return null
 }
 
-function parseN8nResponse(data: unknown): N8nChatResponse {
+function parseN8nResponse(data: unknown, rawFallback: string): N8nChatResponse {
   const output = extractOutput(data)
-
-  if (!output) {
-    throw new Error(
-      'No se encontró el texto de salida. En Respond to Webhook usa: { "output": "={{ $json.output[0].content[0].text }}" }',
-    )
+  if (output) {
+    const meta =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? {
+            lead: (data as Record<string, unknown>).lead as N8nChatResponse['lead'],
+            accion: (data as Record<string, unknown>).accion as string | undefined,
+            fuente: (data as Record<string, unknown>).fuente as string | undefined,
+            quiz: (data as Record<string, unknown>).quiz as N8nChatResponse['quiz'],
+          }
+        : {}
+    return { reply: output, ...meta }
   }
 
-  const root =
-    data && typeof data === 'object' && !Array.isArray(data)
-      ? (data as Record<string, unknown>)
-      : {}
+  if (isUsableOutput(rawFallback)) {
+    return { reply: rawFallback.trim() }
+  }
 
-  const meta = extractMetadata(root)
-
-  return { reply: output, ...meta }
+  throw new Error('No se pudo leer la respuesta de n8n. Revisa la pestaña Network → webhook/chat → Response.')
 }
 
 export function isN8nConfigured(): boolean {
-  return Boolean(webhookUrl?.trim())
+  return Boolean(configuredUrl || import.meta.env.DEV)
 }
 
 export async function sendToN8n(payload: {
@@ -148,34 +111,70 @@ export async function sendToN8n(payload: {
   historial: { rol: string; contenido: string }[]
 }): Promise<N8nChatResponse> {
   if (!isN8nConfigured()) {
-    throw new Error('Webhook n8n no configurado en .env.local')
+    throw new Error('Falta VITE_N8N_WEBHOOK_URL en .env.local')
+  }
+
+  // Payload compatible con Edit Fields: $json.body.*
+  const body = {
+    session: {
+      id: payload.conversacionId,
+      user_id: payload.userId,
+    },
+    conversation: {
+      intent: 'UNKNOWN',
+      state: 'START',
+      goal: '',
+    },
+    message: {
+      role: 'user',
+      content: payload.message,
+    },
+    history: payload.historial.map((m) => ({
+      role: m.rol === 'asistente' ? 'assistant' : 'user',
+      content: m.contenido,
+    })),
+    crm: { profile: {}, summary: {}, lead: {} },
+    memory: { conversation: {}, flags: {} },
   }
 
   let res: Response
   try {
     res = await fetch(webhookUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
     })
-  } catch {
-    throw new Error('No se pudo conectar con n8n. Verifica CORS y que el workflow esté activo.')
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'error de red'
+    throw new Error(`No se pudo llamar al webhook (${detail}). Puede ser CORS o red.`)
   }
 
   const raw = await res.text()
+  let parsed: unknown = null
+  if (raw.trim()) {
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      parsed = null
+    }
+  }
+
+  // Si hay texto usable, lo mostramos aunque el status no sea 200
+  try {
+    if (parsed != null || raw.trim()) {
+      return parseN8nResponse(parsed ?? raw, raw)
+    }
+  } catch {
+    /* seguir con error HTTP */
+  }
 
   if (!res.ok) {
-    throw new Error(`n8n error ${res.status}: ${raw.slice(0, 200)}`)
+    const snippet = raw.slice(0, 180) || res.statusText
+    throw new Error(`Error HTTP ${res.status} del webhook: ${snippet}`)
   }
 
-  if (!raw.trim()) {
-    throw new Error('n8n respondió vacío')
-  }
-
-  try {
-    return parseN8nResponse(JSON.parse(raw))
-  } catch (parseError) {
-    if (parseError instanceof Error) throw parseError
-    throw new Error('n8n respondió en un formato no reconocido')
-  }
+  throw new Error('El webhook respondió vacío')
 }

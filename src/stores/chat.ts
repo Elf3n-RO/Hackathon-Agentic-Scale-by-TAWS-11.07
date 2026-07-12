@@ -214,12 +214,18 @@ export const useChatStore = defineStore('chat', () => {
     const conv = conversacionActiva.value
     error.value = null
 
-    await guardarMensaje(conv.id, 'usuario', contenido)
+    try {
+      await guardarMensaje(conv.id, 'usuario', contenido)
+    } catch (e) {
+      // Si falla guardar el usuario, igual intentamos el chat
+      error.value = e instanceof Error ? `Aviso al guardar mensaje: ${e.message}` : 'Aviso al guardar mensaje'
+    }
+
     escribiendo.value = true
 
     try {
       if (!isN8nConfigured()) {
-        throw new Error('Configura VITE_N8N_WEBHOOK_URL en .env.local para usar el chat IA.')
+        throw new Error('Configura VITE_N8N_WEBHOOK_URL en .env.local')
       }
 
       const historial = mensajes.value.map((m) => ({
@@ -234,12 +240,33 @@ export const useChatStore = defineStore('chat', () => {
         historial,
       })
 
-      await guardarMensaje(conv.id, 'asistente', respuesta.reply, {
-        fuente: respuesta.fuente,
-        accion: respuesta.accion,
-      })
+      // Mostrar siempre la respuesta del IA, aunque falle Supabase/CRM
+      try {
+        await guardarMensaje(conv.id, 'asistente', respuesta.reply, {
+          fuente: respuesta.fuente,
+          accion: respuesta.accion,
+        })
+      } catch {
+        mensajes.value.push({
+          id: crypto.randomUUID(),
+          conversacion_id: conv.id,
+          rol: 'asistente',
+          contenido: respuesta.reply,
+          metadata: {
+            fuente: respuesta.fuente,
+            accion: respuesta.accion,
+          },
+          created_at: new Date().toISOString(),
+        })
+      }
 
-      await aplicarMetadataN8n(respuesta, conv.id, crm)
+      try {
+        await aplicarMetadataN8n(respuesta, conv.id, crm)
+      } catch {
+        /* no bloquear el chat por CRM */
+      }
+
+      error.value = null
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Error al conectar con n8n'
     } finally {

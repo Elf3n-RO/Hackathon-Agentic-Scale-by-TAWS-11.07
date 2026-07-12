@@ -1,3 +1,5 @@
+import { filterImportantFollowups } from '@/lib/followupImportance'
+
 export type FunnelStage = 'DESCUBRIMIENTO' | 'EVALUACION' | 'DECISION' | 'SIN_CLASIFICAR'
 export type SuggestedAction = 'agendar_reunion' | 'enviar_material_educativo' | 'derivar_especialista'
 export type FollowupReviewStatus = 'approved' | 'edited' | 'rejected'
@@ -54,11 +56,13 @@ export async function fetchPendingFollowups(): Promise<FollowupPending[]> {
   if (!raw.trim()) return []
 
   const data = JSON.parse(raw) as unknown
-  if (Array.isArray(data)) return data as FollowupPending[]
-  if (data && typeof data === 'object' && Array.isArray((data as { data?: unknown }).data)) {
-    return (data as { data: FollowupPending[] }).data
+  let items: FollowupPending[] = []
+  if (Array.isArray(data)) items = data as FollowupPending[]
+  else if (data && typeof data === 'object' && Array.isArray((data as { data?: unknown }).data)) {
+    items = (data as { data: FollowupPending[] }).data
   }
-  return []
+
+  return filterImportantFollowups(items)
 }
 
 export async function reviewFollowup(

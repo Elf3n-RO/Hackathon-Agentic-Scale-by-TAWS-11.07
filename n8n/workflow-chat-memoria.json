@@ -27,7 +27,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id, session_id, needs_summary, profile_summary, objections,\n       funnel_stage, suggested_action, action_details, created_at\nFROM fa_followups\nWHERE approval_status = 'pending'\nORDER BY created_at ASC;",
+        "query": "SELECT id, session_id, needs_summary, profile_summary, objections,\n       funnel_stage, suggested_action, action_details, created_at\nFROM fa_followups\nWHERE approval_status = 'pending'\n  AND (\n    funnel_stage IN ('DECISION', 'EVALUACION')\n    OR suggested_action IN ('agendar_reunion', 'derivar_especialista')\n    OR (\n      objections IS NOT NULL\n      AND objections NOT ILIKE '%ninguna%'\n      AND objections NOT ILIKE '%sin objec%'\n      AND funnel_stage NOT IN ('SIN_CLASIFICAR', 'DESCUBRIMIENTO')\n    )\n  )\n  AND NOT (\n    funnel_stage IN ('SIN_CLASIFICAR', 'DESCUBRIMIENTO')\n    AND suggested_action = 'enviar_material_educativo'\n  )\nORDER BY created_at ASC;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -250,7 +250,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rawText = $json.output[0].content[0].text;\nconst cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\nconst data = JSON.parse(cleanText);\n\nreturn {\n  json: {\n    ...data,\n    session_id: $('Edit Fields').first().json.session.id\n  }\n};"
+        "jsCode": "const rawText = $json.output[0].content[0].text;\nconst cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\nconst data = JSON.parse(cleanText);\n\nconst stage = String(data.funnel_stage || '').toUpperCase();\nconst action = String(data.suggested_action || '').toLowerCase();\nconst objections = String(data.objections || '').toLowerCase();\nconst profile = String(data.profile_summary || '').toLowerCase();\nconst needs = String(data.needs_summary || '').trim();\n\nconst importantStages = new Set(['DECISION', 'EVALUACION']);\nconst importantActions = new Set(['agendar_reunion', 'derivar_especialista']);\nconst lowStages = new Set(['SIN_CLASIFICAR', 'DESCUBRIMIENTO']);\nconst trivialObjections = ['ninguna detectada', 'ninguna', 'sin objec', 'no detectada'];\n\nconst hasRealObjections = objections.trim() && !trivialObjections.some((p) => objections.includes(p));\nconst hasCommercialProfile = ['b2b', 'b2c', 'presupuesto', 'capital', 'urgente', 'alta prioridad'].some((s) => profile.includes(s));\n\nlet isImportant = false;\nif (stage === 'DECISION') isImportant = true;\nelse if (importantActions.has(action)) isImportant = true;\nelse if (importantStages.has(stage) && action !== 'enviar_material_educativo') isImportant = true;\nelse if (hasRealObjections && !lowStages.has(stage)) isImportant = true;\nelse if (hasCommercialProfile && importantStages.has(stage)) isImportant = true;\n\nif (action === 'enviar_material_educativo' && lowStages.has(stage) && !hasRealObjections) isImportant = false;\nif (needs.length < 24 && lowStages.has(stage)) isImportant = false;\n\nreturn {\n  json: {\n    ...data,\n    session_id: $('Edit Fields').first().json.session.id,\n    is_important: isImportant,\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -260,6 +260,39 @@
       ],
       "id": "a26be701-e6b6-4e1f-bb0b-d63939a19b7d",
       "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "followup-important-001",
+              "leftValue": "={{ $json.is_important }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        10128,
+        4112
+      ],
+      "id": "f4a8c2d1-9b3e-4f7a-a1c2-8e5d6f7a8b9c",
+      "name": "Solo Hito Importante"
     },
     {
       "parameters": {
@@ -273,7 +306,7 @@
           "values": [
             {
               "role": "system",
-              "content": "# IDENTIDAD\nEres el Agente de Seguimiento de un CRM Inteligente Financiero.\nNO hablas con el usuario. Tu output es interno, para uso del ejecutivo comercial.\n\n# OBJETIVO\nAnalizar la conversación completa (mensaje, datos comerciales, contexto educativo)\ny generar un resumen accionable para el ejecutivo.\n\n# TAREAS\n1. Resume la necesidad del usuario en 1-2 frases.\n2. Resume su perfil (tipo de prospecto, presupuesto, riesgo, objetivo si están disponibles).\n3. Identifica objeciones o dudas expresadas (si no hay, usa \"Ninguna detectada\").\n4. Determina la etapa del embudo: \"DESCUBRIMIENTO\", \"EVALUACION\", \"DECISION\", o \"SIN_CLASIFICAR\".\n5. Sugiere UNA acción: \"agendar_reunion\", \"enviar_material_educativo\", o \"derivar_especialista\".\n6. Da un detalle breve de esa acción (ej. qué material enviar, o con qué especialista).\n\n# REGLAS\nNunca envíes ni ejecutes nada. Nunca inventes datos que no estén en el contexto recibido.\n\n# FORMATO DE SALIDA\nResponde únicamente JSON válido, sin markdown:\n{\n  \"needs_summary\": \"\",\n  \"profile_summary\": \"\",\n  \"objections\": \"\",\n  \"funnel_stage\": \"\",\n  \"suggested_action\": \"\",\n  \"action_details\": \"\"\n}"
+              "content": "# IDENTIDAD\nEres el Agente de Seguimiento de un CRM Inteligente Financiero.\nNO hablas con el usuario. Tu output es interno, para uso del administrador comercial.\n\n# OBJETIVO\nAnalizar la conversación y generar un resumen accionable SOLO cuando haya un hito comercial relevante.\n\n# CUÁNDO ES IMPORTANTE (requiere revisión admin)\n- Etapa DECISION o EVALUACION con intención real de avanzar\n- Usuario pide reunión, asesor, cotización o derivación\n- Objeciones comerciales concretas (precio, riesgo, plazo, desconfianza)\n- Lead B2B/B2C con presupuesto, urgencia o perfil comercial claro\n\n# CUÁNDO NO ES IMPORTANTE\n- Saludos, charla inicial o preguntas educativas genéricas\n- DESCUBRIMIENTO sin datos comerciales\n- Solo enviar material educativo sin señales de compra\n\n# TAREAS\n1. Resume la necesidad del usuario en 1-2 frases.\n2. Resume su perfil (tipo de prospecto, presupuesto, riesgo, objetivo si están disponibles).\n3. Identifica objeciones o dudas expresadas (si no hay, usa \"Ninguna detectada\").\n4. Determina la etapa del embudo: \"DESCUBRIMIENTO\", \"EVALUACION\", \"DECISION\", o \"SIN_CLASIFICAR\".\n5. Sugiere UNA acción: \"agendar_reunion\", \"enviar_material_educativo\", o \"derivar_especialista\".\n6. Da un detalle breve de esa acción.\n\n# REGLAS\nNunca envíes ni ejecutes nada. Nunca inventes datos que no estén en el contexto recibido.\nSi no hay hito comercial importante, usa etapa SIN_CLASIFICAR y acción enviar_material_educativo.\n\n# FORMATO DE SALIDA\nResponde únicamente JSON válido, sin markdown:\n{\n  \"needs_summary\": \"\",\n  \"profile_summary\": \"\",\n  \"objections\": \"\",\n  \"funnel_stage\": \"\",\n  \"suggested_action\": \"\",\n  \"action_details\": \"\"\n}"
             },
             {
               "content": "==={{\nJSON.stringify({\n    message: $('Edit Fields').item.json.message.content,\n    commercial: $json.commercial,\n    education: $json.education\n}, null, 2)\n}}"
@@ -904,6 +937,17 @@
       ]
     },
     "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Solo Hito Importante",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solo Hito Importante": {
       "main": [
         [
           {

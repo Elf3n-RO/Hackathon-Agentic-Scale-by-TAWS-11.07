@@ -54,7 +54,7 @@ function irAChat() {
       <div v-if="auth.isAdmin" class="action-card card" @click="router.push('/app/admin')">
         <span class="action-icon">⚙️</span>
         <h3>Panel de Administración</h3>
-        <p>Usuarios registrados y propuestas de seguimiento para aprobar, editar o rechazar.</p>
+        <p>Usuarios registrados y seguimiento IA solo en hitos comerciales importantes.</p>
         <button class="btn btn-navy btn-sm">Abrir panel</button>
       </div>
     </div>

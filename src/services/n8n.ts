@@ -154,30 +154,14 @@ export async function sendToN8n(payload: {
     throw new Error('Falta VITE_N8N_WEBHOOK_URL en .env.local')
   }
 
-  // message.content SIEMPRE string plano
   const plainContent = toPlainText(payload.message)
   if (!plainContent) {
     throw new Error('El mensaje del usuario está vacío o no es texto válido')
   }
 
-  const history = (payload.historial ?? []).map((m) => ({
-    role: m.role ?? (m.rol === 'asistente' ? 'assistant' : 'user'),
-    content: toPlainText(m.content ?? m.contenido),
-  })).filter((m) => m.content.length > 0)
-
-  const body: {
-    session?: { id: string }
-    message: { content: string }
-    history: { role: string; content: string }[]
-  } = {
-    message: {
-      content: plainContent, // siempre string plano
-    },
-    history,
-  }
-
-  if (payload.conversacionId) {
-    body.session = { id: String(payload.conversacionId) }
+  // message.content siempre string plano
+  const message = {
+    content: plainContent,
   }
 
   let res: Response
@@ -188,7 +172,7 @@ export async function sendToN8n(payload: {
         Accept: 'application/json, text/plain, */*',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ message }),
     })
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'error de red'

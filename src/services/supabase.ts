@@ -20,7 +20,14 @@ export function getSupabase(): SupabaseClient {
     throw new Error('Faltan VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY')
   }
   if (!client) {
-    client = createClient(supabaseUrl, supabaseAnonKey)
+    client = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
   }
   return client
 }

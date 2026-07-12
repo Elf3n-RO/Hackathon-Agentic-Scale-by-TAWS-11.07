@@ -11,6 +11,9 @@ const email = ref('')
 const password = ref('')
 const loading = ref(false)
 
+const confirmOk = route.query.confirmed === '1'
+const confirmFail = route.query.confirmed === '0'
+
 async function handleLogin() {
   loading.value = true
   const ok = await auth.signIn(email.value, password.value)
@@ -41,6 +44,12 @@ async function handleLogin() {
           <input id="password" v-model="password" type="password" class="form-input" placeholder="••••••••" required />
         </div>
 
+        <p v-if="confirmOk" class="text-sm mb-2" style="color: var(--color-success)">
+          Correo confirmado. Ya puedes iniciar sesión.
+        </p>
+        <p v-if="confirmFail" class="form-error mb-2">
+          No se pudo confirmar el enlace. Prueba iniciar sesión o registrarte de nuevo.
+        </p>
         <p v-if="auth.error" class="form-error mb-2">{{ auth.error }}</p>
 
         <button type="submit" class="btn btn-primary w-full" :disabled="loading">

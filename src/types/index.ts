@@ -1,4 +1,4 @@
-export type UserRole = 'cliente' | 'ejecutivo' | 'admin'
+export type UserRole = 'cliente' | 'admin'
 export type ChatTipo = 'comercial' | 'tutor'
 export type MensajeRol = 'usuario' | 'asistente'
 export type LeadTipo = 'B2B' | 'B2C'
@@ -18,7 +18,8 @@ export interface Conversacion {
   user_id: string
   titulo: string
   tipo: ChatTipo
-  estado: string
+  estado: 'activa' | 'eliminada' | string
+  deleted_at?: string | null
   created_at: string
   updated_at: string
 }

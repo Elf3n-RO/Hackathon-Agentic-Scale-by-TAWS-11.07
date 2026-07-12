@@ -37,6 +37,13 @@ async function enviar() {
 async function nuevaConversacion() {
   await chat.crearConversacion()
 }
+
+async function eliminarChatActual() {
+  const id = chat.conversacionActiva?.id
+  if (!id) return
+  if (!confirm('¿Eliminar esta conversación? El admin podrá verla en el historial eliminado.')) return
+  await chat.eliminarConversacion(id)
+}
 </script>
 
 <template>
@@ -55,6 +62,14 @@ async function nuevaConversacion() {
             <h2>{{ chat.conversacionActiva.titulo }}</h2>
             <p class="text-sm text-muted">Asistente IA — conectado a n8n</p>
           </div>
+          <button
+            type="button"
+            class="btn btn-sm btn-eliminar"
+            title="Eliminar chat"
+            @click="eliminarChatActual"
+          >
+            Eliminar chat
+          </button>
         </div>
 
         <ChatMessages ref="messagesRef" :escribiendo="chat.escribiendo" />
@@ -103,6 +118,10 @@ async function nuevaConversacion() {
 }
 
 .chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--color-gray-100);
 }
@@ -111,6 +130,17 @@ async function nuevaConversacion() {
   font-size: 1.125rem;
   color: var(--color-navy);
   margin-bottom: 0.125rem;
+}
+
+.btn-eliminar {
+  flex-shrink: 0;
+  color: var(--color-danger);
+  border: 1px solid var(--color-gray-200);
+}
+
+.btn-eliminar:hover {
+  background: rgba(220, 38, 38, 0.06);
+  border-color: var(--color-danger);
 }
 
 .chat-error {

@@ -55,8 +55,7 @@ async function handleRegister() {
         <div class="form-group">
           <label for="role">Tipo de usuario</label>
           <select id="role" v-model="role" class="form-input">
-            <option value="cliente">Cliente / Prospecto</option>
-            <option value="ejecutivo">Ejecutivo comercial</option>
+            <option value="cliente">Cliente</option>
             <option value="admin">Administrador</option>
           </select>
         </div>

@@ -21,9 +21,8 @@ async function confirmarRenombrar(id: string) {
 }
 
 async function eliminar(id: string) {
-  if (confirm('¿Eliminar esta conversación?')) {
-    await chat.eliminarConversacion(id)
-  }
+  if (!confirm('¿Eliminar esta conversación? El admin podrá verla en el historial eliminado.')) return
+  await chat.eliminarConversacion(id)
 }
 </script>
 
@@ -65,8 +64,8 @@ async function eliminar(id: string) {
           </template>
         </div>
         <div class="conv-actions" @click.stop>
-          <button class="btn-icon btn-sm" title="Renombrar" @click="iniciarRenombrar(conv.id, conv.titulo)">✏️</button>
-          <button class="btn-icon btn-sm" title="Eliminar" @click="eliminar(conv.id)">🗑️</button>
+          <button type="button" class="btn-icon btn-sm" title="Renombrar" @click="iniciarRenombrar(conv.id, conv.titulo)">✏️</button>
+          <button type="button" class="btn-icon btn-sm btn-delete" title="Eliminar" @click="eliminar(conv.id)">🗑️</button>
         </div>
       </div>
 
@@ -140,14 +139,32 @@ async function eliminar(id: string) {
 }
 
 .conv-actions {
-  display: none;
+  display: flex;
   gap: 0.125rem;
+  opacity: 0.35;
 }
 
-.conv-item:hover .conv-actions { display: flex; }
+.conv-item:hover .conv-actions,
+.conv-item.active .conv-actions {
+  opacity: 1;
+}
+
+.btn-delete:hover {
+  color: var(--color-danger);
+}
 
 @media (max-width: 768px) {
-  .chat-sidebar { width: 64px; }
-  .sidebar-top h3, .sidebar-top .btn, .conv-title, .conv-date, .conv-actions { display: none; }
+  .chat-sidebar { width: 72px; }
+  .sidebar-top h3,
+  .sidebar-top .btn,
+  .conv-title,
+  .conv-date { display: none; }
+
+  .conv-actions {
+    opacity: 1;
+    flex-direction: column;
+  }
+
+  .conv-info .conv-icon { margin: 0 auto; }
 }
 </style>

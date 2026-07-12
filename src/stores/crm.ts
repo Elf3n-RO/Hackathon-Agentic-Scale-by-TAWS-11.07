@@ -21,7 +21,7 @@ export const useCrmStore = defineStore('crm', () => {
     loading.value = true
     try {
       if (useMock) {
-        if (auth.isEjecutivo || auth.isAdmin) {
+        if (auth.isAdmin) {
           leads.value = [...mockLeads]
         } else {
           leads.value = mockLeads.filter((l) => l.user_id === auth.user!.id)

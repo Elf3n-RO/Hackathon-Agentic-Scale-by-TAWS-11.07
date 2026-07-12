@@ -5,9 +5,20 @@ import { getSupabase, useMock } from '@/services/supabase'
 import { sendToN8n, isN8nConfigured } from '@/services/n8n'
 import { useAuthStore } from './auth'
 import { useCrmStore } from './crm'
+import { softDeleteConversation } from '@/services/chatHistory'
 
 const mockConversaciones: Conversacion[] = []
 const mockMensajes: Record<string, Mensaje[]> = {}
+
+function tituloDesdeMensaje(texto: string): string {
+  const t = texto.trim().replace(/\s+/g, ' ')
+  if (!t) return 'Chat IA'
+  return t.length > 42 ? `${t.slice(0, 42)}…` : t
+}
+
+function esActiva(c: Conversacion): boolean {
+  return c.estado !== 'eliminada' && !c.deleted_at
+}
 
 export const useChatStore = defineStore('chat', () => {
   const conversaciones = ref<Conversacion[]>([])
@@ -28,7 +39,9 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       if (useMock) {
-        conversaciones.value = mockConversaciones.filter((c) => c.user_id === auth.user!.id)
+        conversaciones.value = mockConversaciones.filter(
+          (c) => c.user_id === auth.user!.id && esActiva(c),
+        )
         return
       }
 
@@ -36,10 +49,11 @@ export const useChatStore = defineStore('chat', () => {
       const { data, error: err } = await supabase
         .from('conversaciones')
         .select('*')
+        .eq('user_id', auth.user.id)
         .order('updated_at', { ascending: false })
 
       if (err) throw err
-      conversaciones.value = (data ?? []) as Conversacion[]
+      conversaciones.value = ((data ?? []) as Conversacion[]).filter(esActiva)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Error al cargar conversaciones'
     } finally {
@@ -53,7 +67,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const nueva: Partial<Conversacion> = {
       user_id: auth.user.id,
-      titulo: titulo ?? 'Chat IA',
+      titulo: titulo ?? `Chat ${new Date().toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`,
       tipo: 'comercial',
       estado: 'activa',
     }
@@ -93,8 +107,14 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function obtenerOCrearConversacion() {
-    if (conversacionActiva.value) return conversacionActiva.value
     await cargarConversaciones()
+    if (conversacionActiva.value && esActiva(conversacionActiva.value)) {
+      const stillThere = conversaciones.value.find((c) => c.id === conversacionActiva.value!.id)
+      if (stillThere) {
+        await seleccionarConversacion(stillThere)
+        return conversacionActiva.value
+      }
+    }
     if (conversaciones.value.length) {
       await seleccionarConversacion(conversaciones.value[0])
       return conversacionActiva.value
@@ -104,6 +124,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function seleccionarConversacion(conv: Conversacion) {
     conversacionActiva.value = conv
+    mensajes.value = []
     fuenteActual.value = null
     quizActivo.value = null
     await cargarMensajes(conv.id)
@@ -111,7 +132,9 @@ export const useChatStore = defineStore('chat', () => {
 
   async function cargarMensajes(conversacionId: string) {
     if (useMock) {
-      mensajes.value = mockMensajes[conversacionId] ?? []
+      if (conversacionActiva.value?.id === conversacionId) {
+        mensajes.value = [...(mockMensajes[conversacionId] ?? [])]
+      }
       return
     }
 
@@ -126,45 +149,66 @@ export const useChatStore = defineStore('chat', () => {
       error.value = err.message
       return
     }
-    mensajes.value = (data ?? []) as Mensaje[]
+    // Solo aplicar si seguimos en el mismo chat (evita carrera al cambiar rápido)
+    if (conversacionActiva.value?.id === conversacionId) {
+      mensajes.value = (data ?? []) as Mensaje[]
+    }
   }
 
-  async function guardarMensaje(
+  function pushLocal(
     conversacionId: string,
     rol: 'usuario' | 'asistente',
     contenido: string,
     metadata?: Record<string, unknown>,
-  ) {
-    const msg: Partial<Mensaje> = { conversacion_id: conversacionId, rol, contenido, metadata }
-
+  ): Mensaje {
+    const m: Mensaje = {
+      id: crypto.randomUUID(),
+      conversacion_id: conversacionId,
+      rol,
+      contenido,
+      metadata,
+      created_at: new Date().toISOString(),
+    }
     if (useMock) {
-      const m: Mensaje = {
-        id: crypto.randomUUID(),
-        conversacion_id: conversacionId,
-        rol,
-        contenido,
-        metadata,
-        created_at: new Date().toISOString(),
-      }
       if (!mockMensajes[conversacionId]) mockMensajes[conversacionId] = []
       mockMensajes[conversacionId].push(m)
-      if (conversacionActiva.value?.id === conversacionId) mensajes.value.push(m)
-      return m
     }
+    if (conversacionActiva.value?.id === conversacionId) mensajes.value.push(m)
+    return m
+  }
+
+  async function persistirMensaje(
+    conversacionId: string,
+    rol: 'usuario' | 'asistente',
+    contenido: string,
+    metadata?: Record<string, unknown>,
+    localId?: string,
+  ): Promise<Mensaje | null> {
+    if (useMock) return null
+
+    const row: Record<string, unknown> = {
+      conversacion_id: conversacionId,
+      rol,
+      contenido,
+    }
+    if (metadata) row.metadata = metadata
 
     const supabase = getSupabase()
-    const { data, error: err } = await supabase.from('mensajes').insert(msg).select().single()
+    const { data, error: err } = await supabase.from('mensajes').insert(row).select().single()
     if (err) throw err
 
-    const m = data as Mensaje
-    if (conversacionActiva.value?.id === conversacionId) mensajes.value.push(m)
+    const saved = data as Mensaje
+    if (localId && conversacionActiva.value?.id === conversacionId) {
+      const idx = mensajes.value.findIndex((m) => m.id === localId)
+      if (idx >= 0) mensajes.value[idx] = saved
+    }
 
     await supabase
       .from('conversaciones')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', conversacionId)
 
-    return m
+    return saved
   }
 
   async function renombrarConversacion(id: string, titulo: string) {
@@ -174,31 +218,56 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
     const supabase = getSupabase()
-    await supabase.from('conversaciones').update({ titulo }).eq('id', id)
+    const { error: err } = await supabase.from('conversaciones').update({ titulo }).eq('id', id)
+    if (err) {
+      error.value = err.message
+      return
+    }
     const c = conversaciones.value.find((x) => x.id === id)
     if (c) c.titulo = titulo
+    if (conversacionActiva.value?.id === id) conversacionActiva.value.titulo = titulo
   }
 
   async function eliminarConversacion(id: string) {
-    if (useMock) {
+    const auth = useAuthStore()
+    if (!auth.user) return false
+
+    error.value = null
+
+    try {
+      if (useMock) {
+        const c = mockConversaciones.find((x) => x.id === id)
+        if (c) {
+          c.estado = 'eliminada'
+          c.deleted_at = new Date().toISOString()
+        }
+        delete mockMensajes[id]
+      } else {
+        await softDeleteConversation(auth.user.id, id)
+      }
+
       conversaciones.value = conversaciones.value.filter((c) => c.id !== id)
-      delete mockMensajes[id]
       if (conversacionActiva.value?.id === id) {
         conversacionActiva.value = null
         mensajes.value = []
+        if (conversaciones.value.length) {
+          await seleccionarConversacion(conversaciones.value[0])
+        } else {
+          await crearConversacion()
+        }
       }
-      return
-    }
-    const supabase = getSupabase()
-    await supabase.from('conversaciones').delete().eq('id', id)
-    conversaciones.value = conversaciones.value.filter((c) => c.id !== id)
-    if (conversacionActiva.value?.id === id) {
-      conversacionActiva.value = null
-      mensajes.value = []
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'No se pudo eliminar el chat'
+      return false
     }
   }
 
-  async function aplicarMetadataN8n(respuesta: N8nChatResponse, convId: string, crm: ReturnType<typeof useCrmStore>) {
+  async function aplicarMetadataN8n(
+    respuesta: N8nChatResponse,
+    convId: string,
+    crm: ReturnType<typeof useCrmStore>,
+  ) {
     if (respuesta.fuente) fuenteActual.value = respuesta.fuente
     if (respuesta.quiz) quizActivo.value = respuesta.quiz
     if (respuesta.lead) {
@@ -212,13 +281,27 @@ export const useChatStore = defineStore('chat', () => {
     if (!auth.user || !conversacionActiva.value) return
 
     const conv = conversacionActiva.value
+    const texto = contenido.trim()
+    if (!texto) return
+
     error.value = null
 
+    // Mostrar mensaje del usuario al instante (aunque falle Supabase)
+    const localUser = pushLocal(conv.id, 'usuario', texto)
+
+    // Renombrar chat vacío con el primer mensaje
+    if (mensajes.value.filter((m) => m.rol === 'usuario').length === 1) {
+      const nuevoTitulo = tituloDesdeMensaje(texto)
+      void renombrarConversacion(conv.id, nuevoTitulo)
+    }
+
     try {
-      await guardarMensaje(conv.id, 'usuario', contenido)
+      await persistirMensaje(conv.id, 'usuario', texto, undefined, localUser.id)
     } catch (e) {
-      // Si falla guardar el usuario, igual intentamos el chat
-      error.value = e instanceof Error ? `Aviso al guardar mensaje: ${e.message}` : 'Aviso al guardar mensaje'
+      error.value =
+        e instanceof Error
+          ? `No se guardó en historial: ${e.message}`
+          : 'No se guardó el mensaje en historial'
     }
 
     escribiendo.value = true
@@ -234,30 +317,27 @@ export const useChatStore = defineStore('chat', () => {
       }))
 
       const respuesta = await sendToN8n({
-        message: contenido,
+        message: texto,
         conversacionId: conv.id,
         userId: auth.user.id,
         historial,
       })
 
-      // Mostrar siempre la respuesta del IA, aunque falle Supabase/CRM
+      const localAi = pushLocal(conv.id, 'asistente', respuesta.reply, {
+        fuente: respuesta.fuente,
+        accion: respuesta.accion,
+      })
+
       try {
-        await guardarMensaje(conv.id, 'asistente', respuesta.reply, {
-          fuente: respuesta.fuente,
-          accion: respuesta.accion,
-        })
+        await persistirMensaje(
+          conv.id,
+          'asistente',
+          respuesta.reply,
+          { fuente: respuesta.fuente, accion: respuesta.accion },
+          localAi.id,
+        )
       } catch {
-        mensajes.value.push({
-          id: crypto.randomUUID(),
-          conversacion_id: conv.id,
-          rol: 'asistente',
-          contenido: respuesta.reply,
-          metadata: {
-            fuente: respuesta.fuente,
-            accion: respuesta.accion,
-          },
-          created_at: new Date().toISOString(),
-        })
+        /* ya está visible en pantalla */
       }
 
       try {
@@ -266,7 +346,7 @@ export const useChatStore = defineStore('chat', () => {
         /* no bloquear el chat por CRM */
       }
 
-      error.value = null
+      if (!error.value?.startsWith('No se guardó')) error.value = null
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Error al conectar con n8n'
     } finally {

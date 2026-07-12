@@ -159,10 +159,18 @@ export async function sendToN8n(payload: {
     throw new Error('El mensaje del usuario está vacío o no es texto válido')
   }
 
-  // message.content siempre string plano
-  const message = {
-    content: plainContent,
+  // message.content siempre string plano.
+  // sessionId aísla la memoria del agente por conversación (si n8n lo usa).
+  const body: Record<string, unknown> = {
+    message: {
+      content: plainContent,
+    },
   }
+  if (payload.conversacionId) {
+    body.sessionId = payload.conversacionId
+    body.conversacionId = payload.conversacionId
+  }
+  if (payload.userId) body.userId = payload.userId
 
   let res: Response
   try {
@@ -172,7 +180,7 @@ export async function sendToN8n(payload: {
         Accept: 'application/json, text/plain, */*',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(body),
     })
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'error de red'

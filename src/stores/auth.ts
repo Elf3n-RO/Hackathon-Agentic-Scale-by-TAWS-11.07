@@ -17,17 +17,6 @@ const MOCK_USERS: Record<string, { password: string; profile: Profile }> = {
       updated_at: new Date().toISOString(),
     },
   },
-  'ejecutivo@demo.com': {
-    password: 'demo1234',
-    profile: {
-      id: 'mock-ejecutivo-1',
-      full_name: 'Carlos Ruiz',
-      email: 'ejecutivo@demo.com',
-      role: 'ejecutivo',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  },
   'admin@demo.com': {
     password: 'demo1234',
     profile: {
@@ -52,9 +41,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!user.value)
   const isCliente = computed(() => profile.value?.role === 'cliente')
-  const isEjecutivo = computed(() => profile.value?.role === 'ejecutivo')
   const isAdmin = computed(() => profile.value?.role === 'admin')
   const userName = computed(() => profile.value?.full_name || profile.value?.email || 'Usuario')
+
+  function normalizeRole(role: unknown): UserRole {
+    return role === 'admin' ? 'admin' : 'cliente'
+  }
 
   async function fetchProfile(userId: string) {
     if (useMock) return
@@ -67,7 +59,10 @@ export const useAuthStore = defineStore('auth', () => {
       .maybeSingle()
 
     if (err) throw err
-    if (data) profile.value = data as Profile
+    if (data) {
+      const p = data as Profile
+      profile.value = { ...p, role: normalizeRole(p.role) }
+    }
   }
 
   async function ensureProfile(
@@ -156,7 +151,7 @@ export const useAuthStore = defineStore('auth', () => {
           data.user.id,
           data.user.user_metadata?.full_name ?? '',
           data.user.email ?? email,
-          (data.user.user_metadata?.role as UserRole) ?? 'cliente',
+          (normalizeRole(data.user.user_metadata?.role)),
         )
       }
     } catch (e) {
@@ -176,13 +171,14 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     const supabase = getSupabase()
+    const safeRole = normalizeRole(role)
 
     try {
       const { data, error: err } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { full_name: fullName, role },
+          data: { full_name: fullName, role: safeRole },
         },
       })
 
@@ -206,7 +202,7 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         await fetchProfile(data.user.id)
         if (!profile.value) {
-          await ensureProfile(data.user.id, fullName, email, role)
+          await ensureProfile(data.user.id, fullName, email, safeRole)
         }
       } catch (e) {
         error.value = formatSupabaseError(e)
@@ -261,7 +257,19 @@ export const useAuthStore = defineStore('auth', () => {
     const supabase = getSupabase()
     const { data, error: err } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
     if (err) throw err
-    return (data ?? []) as Profile[]
+    return ((data ?? []) as Profile[]).map((p) => ({ ...p, role: normalizeRole(p.role) }))
+  }
+
+  async function searchProfiles(query: string): Promise<Profile[]> {
+    const q = query.trim().toLowerCase()
+    const all = await fetchAllProfiles()
+    if (!q) return all
+    return all.filter((p) => {
+      const name = (p.full_name || '').toLowerCase()
+      const email = (p.email || '').toLowerCase()
+      const role = (p.role || '').toLowerCase()
+      return name.includes(q) || email.includes(q) || role.includes(q) || p.id.toLowerCase().includes(q)
+    })
   }
 
   return {
@@ -272,7 +280,6 @@ export const useAuthStore = defineStore('auth', () => {
     infoMessage,
     isAuthenticated,
     isCliente,
-    isEjecutivo,
     isAdmin,
     userName,
     init,
@@ -281,5 +288,6 @@ export const useAuthStore = defineStore('auth', () => {
     signOut,
     updateProfile,
     fetchAllProfiles,
+    searchProfiles,
   }
 })

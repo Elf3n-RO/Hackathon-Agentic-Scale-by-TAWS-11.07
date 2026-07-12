@@ -42,16 +42,14 @@ const router = createRouter({
           component: () => import('@/views/ProfileView.vue'),
         },
         {
-          path: 'ejecutivo',
-          name: 'ejecutivo',
-          component: () => import('@/views/ExecutivePanelView.vue'),
-          meta: { roles: ['ejecutivo', 'admin'] },
-        },
-        {
           path: 'admin',
           name: 'admin',
           component: () => import('@/views/AdminPanelView.vue'),
           meta: { roles: ['admin'] },
+        },
+        {
+          path: 'ejecutivo',
+          redirect: '/app/admin',
         },
       ],
     },

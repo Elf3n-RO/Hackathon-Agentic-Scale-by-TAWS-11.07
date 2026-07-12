@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS conversaciones (
   titulo TEXT NOT NULL DEFAULT 'Nueva conversación',
   tipo chat_tipo NOT NULL DEFAULT 'comercial',
   estado TEXT NOT NULL DEFAULT 'activa',
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -156,9 +157,13 @@ CREATE POLICY "Usuarios ven sus conversaciones" ON conversaciones
 CREATE POLICY "Usuarios crean conversaciones" ON conversaciones
   FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Usuarios editan sus conversaciones" ON conversaciones
-  FOR UPDATE USING (user_id = auth.uid());
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Usuarios eliminan sus conversaciones" ON conversaciones
   FOR DELETE USING (user_id = auth.uid());
+CREATE POLICY "Admin edita conversaciones" ON conversaciones
+  FOR UPDATE USING (get_my_role() = 'admin');
+CREATE POLICY "Admin elimina conversaciones" ON conversaciones
+  FOR DELETE USING (get_my_role() = 'admin');
 
 -- Mensajes policies
 CREATE POLICY "Ver mensajes de conversaciones propias" ON mensajes

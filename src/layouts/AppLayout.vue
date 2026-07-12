@@ -13,11 +13,8 @@ const navItems = computed(() => {
     { to: '/app/chat', label: 'Chat IA', icon: '💬' },
     { to: '/app/perfil', label: 'Perfil', icon: '👤' },
   ]
-  if (auth.isEjecutivo || auth.isAdmin) {
-    items.push({ to: '/app/ejecutivo', label: 'Panel CRM', icon: '📋' })
-  }
   if (auth.isAdmin) {
-    items.push({ to: '/app/admin', label: 'Admin', icon: '⚙️' })
+    items.push({ to: '/app/admin', label: 'Administración', icon: '⚙️' })
   }
   return items
 })

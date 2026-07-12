@@ -53,11 +53,11 @@ function irAChat() {
         <p>Conversación libre conectada a n8n. Califica leads y educación financiera desde un solo chat.</p>
         <button class="btn btn-primary btn-sm">Abrir chat</button>
       </div>
-      <div v-if="auth.isEjecutivo || auth.isAdmin" class="action-card card" @click="router.push('/app/ejecutivo')">
-        <span class="action-icon">📋</span>
-        <h3>Panel CRM</h3>
-        <p>Revisa leads, aprueba acciones comerciales y deriva oportunidades.</p>
-        <button class="btn btn-navy btn-sm">Ver panel</button>
+      <div v-if="auth.isAdmin" class="action-card card" @click="router.push('/app/admin')">
+        <span class="action-icon">⚙️</span>
+        <h3>Panel de Administración</h3>
+        <p>Usuarios registrados y propuestas de seguimiento para aprobar, editar o rechazar.</p>
+        <button class="btn btn-navy btn-sm">Abrir panel</button>
       </div>
     </div>
 

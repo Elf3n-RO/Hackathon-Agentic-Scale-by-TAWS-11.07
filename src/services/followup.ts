@@ -32,21 +32,12 @@ export interface FollowupReviewResponse {
   }
 }
 
-const BASE = import.meta.env.DEV
-  ? ''
-  : ((import.meta.env.VITE_N8N_BASE_URL as string | undefined)?.replace(/\/$/, '') ||
-    'https://primary-production-3b7c.up.railway.app')
-
 function pendingUrl() {
-  return import.meta.env.DEV
-    ? '/api/followup/pending'
-    : `${BASE}/webhook/followup/pending`
+  return '/api/followup/pending'
 }
 
 function reviewUrl() {
-  return import.meta.env.DEV
-    ? '/api/followup/review'
-    : `${BASE}/webhook/followup/review`
+  return '/api/followup/review'
 }
 
 export async function fetchPendingFollowups(): Promise<FollowupPending[]> {

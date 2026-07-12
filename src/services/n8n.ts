@@ -1,8 +1,7 @@
 import type { N8nChatResponse } from '@/types'
 import { getSessionId } from '@/services/chatSession'
 
-const configuredUrl = (import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefined)?.trim() || ''
-const webhookUrl = import.meta.env.DEV ? '/api/n8n-chat' : configuredUrl
+const webhookUrl = '/api/n8n-chat'
 
 export function toPlainText(value: unknown): string {
   if (value == null) return ''
@@ -255,7 +254,8 @@ function httpErrorMessage(status: number, raw: string): string {
 }
 
 export function isN8nConfigured(): boolean {
-  return Boolean(configuredUrl || import.meta.env.DEV)
+  // El proxy /api/n8n-chat existe en Vite y en Vercel; la URL real va en env del servidor
+  return true
 }
 
 export async function sendToN8n(payload: {
@@ -263,7 +263,7 @@ export async function sendToN8n(payload: {
   sessionId?: string
 }): Promise<N8nChatResponse> {
   if (!isN8nConfigured()) {
-    throw new Error('Falta VITE_N8N_WEBHOOK_URL en .env.local')
+    throw new Error('Falta configurar el proxy n8n (/api/n8n-chat)')
   }
 
   const plainContent = toPlainText(payload.message)

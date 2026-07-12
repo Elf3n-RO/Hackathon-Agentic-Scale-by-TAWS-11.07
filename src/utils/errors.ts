@@ -1,5 +1,4 @@
 import type { AuthError, PostgrestError } from '@supabase/supabase-js'
-import type { UserRole } from '@/types'
 
 export function formatSupabaseError(err: unknown): string {
   if (!err) return 'Error desconocido'

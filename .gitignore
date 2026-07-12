@@ -5,3 +5,8 @@ dist-ssr
 .env
 .env.local
 .DS_Store
+*.tsbuildinfo
+.vercel
+vite.config.js
+vite.config.d.ts
+.cursor/

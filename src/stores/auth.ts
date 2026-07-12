@@ -174,11 +174,15 @@ export const useAuthStore = defineStore('auth', () => {
     const safeRole = normalizeRole(role)
 
     try {
+      // Tras confirmar el correo, volver a esta misma app (Vercel o localhost)
+      const emailRedirectTo = `${window.location.origin}/login`
+
       const { data, error: err } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { full_name: fullName, role: safeRole },
+          emailRedirectTo,
         },
       })
 

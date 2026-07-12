@@ -13,9 +13,11 @@ const crm = useCrmStore()
 
 const mensaje = ref('')
 const messagesRef = ref<InstanceType<typeof ChatMessages> | null>(null)
+const mostrarAside = ref(true)
 
 onMounted(async () => {
   await Promise.all([crm.cargarLeads(), chat.obtenerOCrearConversacion()])
+  if (chat.mensajes.length > 0) mostrarAside.value = false
 })
 
 watch(() => chat.mensajes.length, async () => {
@@ -31,11 +33,17 @@ async function enviar() {
   if (!mensaje.value.trim()) return
   const texto = mensaje.value
   mensaje.value = ''
+  mostrarAside.value = false
   await chat.enviarMensaje(texto)
 }
 
 async function nuevaConversacion() {
+  mostrarAside.value = true
   await chat.crearConversacion()
+}
+
+function onIniciarQuiz() {
+  mostrarAside.value = false
 }
 
 async function eliminarChatActual() {
@@ -80,9 +88,13 @@ async function eliminarChatActual() {
       </template>
     </div>
 
-    <aside class="chat-aside">
+    <aside v-if="mostrarAside" class="chat-aside">
       <CrmPanel :lead="crm.leadActivo" />
-      <QuizPanel :fuente="chat.fuenteActual" :quiz="chat.quizActivo" />
+      <QuizPanel
+        :fuente="chat.fuenteActual"
+        :quiz="chat.quizActivo"
+        @iniciar-quiz="onIniciarQuiz"
+      />
     </aside>
   </div>
 </template>

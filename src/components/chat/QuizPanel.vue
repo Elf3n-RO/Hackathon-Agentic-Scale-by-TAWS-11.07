@@ -42,7 +42,10 @@ async function enviarQuiz() {
   )
 }
 
+const emit = defineEmits<{ 'iniciar-quiz': [] }>()
+
 async function iniciarQuiz() {
+  emit('iniciar-quiz')
   await chat.enviarMensaje('Quiero iniciar el quiz de evaluación diagnóstica.')
 }
 </script>

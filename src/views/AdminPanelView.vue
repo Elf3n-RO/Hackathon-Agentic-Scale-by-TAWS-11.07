@@ -29,8 +29,6 @@ const actionMessage = ref<string | null>(null)
 
 const selectedUser = ref<Profile | null>(null)
 const activas = ref<Conversacion[]>([])
-const eliminadas = ref<Conversacion[]>([])
-const historyFilter = ref<'todas' | 'activa' | 'eliminada'>('todas')
 const loadingHistory = ref(false)
 const historyError = ref<string | null>(null)
 const selectedConv = ref<Conversacion | null>(null)
@@ -45,12 +43,6 @@ const stats = computed(() => ({
   admins: profiles.value.filter((p) => p.role === 'admin').length,
   pendientes: followups.value.length,
 }))
-
-const visibleConversations = computed(() => {
-  if (historyFilter.value === 'activa') return activas.value
-  if (historyFilter.value === 'eliminada') return eliminadas.value
-  return [...activas.value, ...eliminadas.value]
-})
 
 async function loadUsers() {
   loadingUsers.value = true
@@ -97,17 +89,14 @@ async function openUserHistory(user: Profile) {
   selectedUser.value = user
   selectedConv.value = null
   convMessages.value = []
-  historyFilter.value = 'todas'
   loadingHistory.value = true
   historyError.value = null
   try {
     const data = await fetchUserConversations(user.id)
     activas.value = data.activas
-    eliminadas.value = data.eliminadas
   } catch (e) {
     historyError.value = e instanceof Error ? e.message : 'Error al cargar historial'
     activas.value = []
-    eliminadas.value = []
   } finally {
     loadingHistory.value = false
   }
@@ -118,7 +107,6 @@ function closeUserHistory() {
   selectedConv.value = null
   convMessages.value = []
   activas.value = []
-  eliminadas.value = []
 }
 
 async function openConversation(conv: Conversacion) {
@@ -382,7 +370,7 @@ onUnmounted(() => {
           <div>
             <strong>Historial de {{ selectedUser.full_name || selectedUser.email }}</strong>
             <p class="text-sm text-muted">
-              Datos guardados en Supabase (sin consultar a la IA). Activos: {{ activas.length }} · Eliminados (máx. 10): {{ eliminadas.length }}
+              Chats activos guardados en Supabase ({{ activas.length }}).
             </p>
           </div>
           <button class="btn btn-secondary btn-sm" @click="closeUserHistory">Cerrar</button>
@@ -390,35 +378,11 @@ onUnmounted(() => {
 
         <div class="history-body">
           <div class="history-sidebar">
-            <div class="filter-row">
-              <button
-                class="btn btn-sm"
-                :class="historyFilter === 'todas' ? 'btn-primary' : 'btn-secondary'"
-                @click="historyFilter = 'todas'"
-              >
-                Todas
-              </button>
-              <button
-                class="btn btn-sm"
-                :class="historyFilter === 'activa' ? 'btn-primary' : 'btn-secondary'"
-                @click="historyFilter = 'activa'"
-              >
-                Activas
-              </button>
-              <button
-                class="btn btn-sm"
-                :class="historyFilter === 'eliminada' ? 'btn-primary' : 'btn-secondary'"
-                @click="historyFilter = 'eliminada'"
-              >
-                Eliminadas
-              </button>
-            </div>
-
             <p v-if="historyError" class="form-error">{{ historyError }}</p>
             <p v-if="loadingHistory" class="text-muted text-sm">Cargando chats...</p>
 
             <button
-              v-for="conv in visibleConversations"
+              v-for="conv in activas"
               :key="conv.id"
               class="conv-item"
               :class="{ active: selectedConv?.id === conv.id }"
@@ -426,20 +390,15 @@ onUnmounted(() => {
             >
               <div class="conv-title">{{ conv.titulo || 'Chat IA' }}</div>
               <div class="conv-meta">
-                <span
-                  class="badge"
-                  :class="conv.estado === 'eliminada' ? 'badge-danger' : 'badge-success'"
-                >
-                  {{ conv.estado === 'eliminada' ? 'Eliminado' : 'Activo' }}
-                </span>
+                <span class="badge badge-success">Activo</span>
                 <span class="text-sm text-muted">
                   {{ new Date(conv.updated_at).toLocaleDateString('es') }}
                 </span>
               </div>
             </button>
 
-            <p v-if="!loadingHistory && !visibleConversations.length" class="text-muted text-sm text-center">
-              Sin conversaciones en este filtro.
+            <p v-if="!loadingHistory && !activas.length" class="text-muted text-sm text-center">
+              Sin conversaciones activas.
             </p>
           </div>
 
@@ -451,12 +410,7 @@ onUnmounted(() => {
             <template v-else>
               <div class="messages-header">
                 <strong>{{ selectedConv.titulo }}</strong>
-                <span
-                  class="badge"
-                  :class="selectedConv.estado === 'eliminada' ? 'badge-danger' : 'badge-success'"
-                >
-                  {{ selectedConv.estado === 'eliminada' ? 'Eliminado' : 'Activo' }}
-                </span>
+                <span class="badge badge-success">Activo</span>
               </div>
 
               <p v-if="loadingMessages" class="text-muted text-sm">Cargando mensajes...</p>

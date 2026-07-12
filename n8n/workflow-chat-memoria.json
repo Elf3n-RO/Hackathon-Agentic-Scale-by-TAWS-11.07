@@ -1,0 +1,1214 @@
+{
+  "name": "SyntaxError Chat (memoria + opciones)",
+  "nodes": [
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        8304,
+        5104
+      ],
+      "id": "4c4e9b25-54d6-44f7-830a-de00d97dbd15",
+      "name": "Respond to Webhook3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, session_id, needs_summary, profile_summary, objections,\n       funnel_stage, suggested_action, action_details, created_at\nFROM fa_followups\nWHERE approval_status = 'pending'\nORDER BY created_at ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        8096,
+        5104
+      ],
+      "id": "61f8fa21-6a51-49b9-b652-b712ade5f347",
+      "name": "Execute a SQL query7",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "followup/pending",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        7888,
+        5104
+      ],
+      "id": "06111cf0-a6a4-4c47-ab76-c3c062911a1e",
+      "name": "Webhook2",
+      "webhookId": "536f6470-ab7a-4758-9360-a8e9374c496c"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        8800,
+        4592
+      ],
+      "id": "ff80eb65-5d39-4f47-b030-7efe1205b9d2",
+      "name": "Respond to Webhook2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return {\n    json: {\n      ok: false,\n      error: 'No se encontró ningún followup con ese id'\n    }\n  };\n}\n\nreturn {\n  json: {\n    ok: true,\n    followup: items[0].json\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8592,
+        4592
+      ],
+      "id": "77ff3cdc-1a46-478a-80b7-e5b9a946fd07",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fa_followups\nSET approval_status = $1,\n    final_action = CASE WHEN $1 = 'edited' THEN $2 ELSE suggested_action END,\n    reviewed_by = $3,\n    reviewed_at = NOW()\nWHERE id = $4\nRETURNING id, approval_status, final_action;",
+        "options": {
+          "queryReplacement": "=={{ [$json.status, $json.edited_action, $json.reviewed_by, $json.followup_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        8384,
+        4592
+      ],
+      "id": "b124bb15-de82-443e-9c63-dde7597d53c5",
+      "name": "Execute a SQL query6",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, errors: $json.errors }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        8384,
+        4784
+      ],
+      "id": "de4866e7-e752-47d7-905a-effaebe15939",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d129aa36-323f-40b3-86cf-2c2593ae2c40",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        8176,
+        4688
+      ],
+      "id": "5a258e88-0227-418b-90b2-bd9196948832",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\n\nconst validStatuses = ['approved', 'edited', 'rejected'];\nconst status = body.status;\nconst followupId = body.followup_id;\nconst reviewedBy = body.reviewed_by ? String(body.reviewed_by).trim() : null;\nconst editedAction = body.edited_action ? String(body.edited_action).trim() : null;\n\nconst errors = [];\n\nif (!followupId || typeof followupId !== 'string') {\n  errors.push('followup_id es obligatorio y debe ser un string');\n}\n\nif (!validStatuses.includes(status)) {\n  errors.push(`status debe ser uno de: ${validStatuses.join(', ')}`);\n}\n\nif (status === 'edited' && !editedAction) {\n  errors.push('edited_action es obligatorio cuando status es \"edited\"');\n}\n\nif (!reviewedBy) {\n  errors.push('reviewed_by es obligatorio');\n}\n\nif (errors.length > 0) {\n  return {\n    json: {\n      valid: false,\n      errors\n    }\n  };\n}\n\nreturn {\n  json: {\n    valid: true,\n    followup_id: followupId,\n    status,\n    edited_action: editedAction,\n    reviewed_by: reviewedBy\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7968,
+        4688
+      ],
+      "id": "72379342-60ed-449c-ac9a-55686be8220b",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "followup/review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        7760,
+        4688
+      ],
+      "id": "8c1df2e2-3498-4b3a-b6da-47270bbc6c33",
+      "name": "Webhook1",
+      "webhookId": "ced51fac-c8f5-4d5c-a205-7ab5bbfac0d5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_sessions (id, status)\nVALUES (md5($1)::uuid, 'active')\nON CONFLICT (id) DO NOTHING;",
+        "options": {
+          "queryReplacement": "=={{ [$json.session_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        10128,
+        4208
+      ],
+      "id": "f05bebe7-4a7e-49fc-a21a-7cbc7d6ca7d1",
+      "name": "Asegurar Sesion Existe",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_followups\n  (session_id, needs_summary, profile_summary, objections, funnel_stage, suggested_action, action_details)\nVALUES\n  (md5($1)::uuid, $2, $3, $4, $5, $6, $7);",
+        "options": {
+          "queryReplacement": "=={{ [$('Code in JavaScript3').item.json.session_id, $('Code in JavaScript3').item.json.needs_summary, $('Code in JavaScript3').item.json.profile_summary, $('Code in JavaScript3').item.json.objections, $('Code in JavaScript3').item.json.funnel_stage, $('Code in JavaScript3').item.json.suggested_action, $('Code in JavaScript3').item.json.action_details] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        10192,
+        4112
+      ],
+      "id": "43028062-f971-4f85-b60c-0f82b1b56660",
+      "name": "Execute a SQL query5",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawText = $json.output[0].content[0].text;\nconst cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\nconst data = JSON.parse(cleanText);\n\nreturn {\n  json: {\n    ...data,\n    session_id: $('Edit Fields').first().json.session.id\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        10064,
+        4112
+      ],
+      "id": "a26be701-e6b6-4e1f-bb0b-d63939a19b7d",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5.4-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-5.4-NANO"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "# IDENTIDAD\nEres el Agente de Seguimiento de un CRM Inteligente Financiero.\nNO hablas con el usuario. Tu output es interno, para uso del ejecutivo comercial.\n\n# OBJETIVO\nAnalizar la conversación completa (mensaje, datos comerciales, contexto educativo)\ny generar un resumen accionable para el ejecutivo.\n\n# TAREAS\n1. Resume la necesidad del usuario en 1-2 frases.\n2. Resume su perfil (tipo de prospecto, presupuesto, riesgo, objetivo si están disponibles).\n3. Identifica objeciones o dudas expresadas (si no hay, usa \"Ninguna detectada\").\n4. Determina la etapa del embudo: \"DESCUBRIMIENTO\", \"EVALUACION\", \"DECISION\", o \"SIN_CLASIFICAR\".\n5. Sugiere UNA acción: \"agendar_reunion\", \"enviar_material_educativo\", o \"derivar_especialista\".\n6. Da un detalle breve de esa acción (ej. qué material enviar, o con qué especialista).\n\n# REGLAS\nNunca envíes ni ejecutes nada. Nunca inventes datos que no estén en el contexto recibido.\n\n# FORMATO DE SALIDA\nResponde únicamente JSON válido, sin markdown:\n{\n  \"needs_summary\": \"\",\n  \"profile_summary\": \"\",\n  \"objections\": \"\",\n  \"funnel_stage\": \"\",\n  \"suggested_action\": \"\",\n  \"action_details\": \"\"\n}"
+            },
+            {
+              "content": "==={{\nJSON.stringify({\n    message: $('Edit Fields').item.json.message.content,\n    commercial: $json.commercial,\n    education: $json.education\n}, null, 2)\n}}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        9792,
+        4112
+      ],
+      "id": "f9d5a215-8f50-46ac-aec0-bb05eff3292e",
+      "name": "Asistente de Seguimiento",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fa_sessions\nSET topic_of_interest = COALESCE($1, topic_of_interest),\n    topic_consent = COALESCE($2, topic_consent)\nWHERE id = md5($3)::uuid;",
+        "options": {
+          "queryReplacement": "=={{ [$json.supported ? $json.topic : null, $json.consent_flag, $json.session_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        9248,
+        4128
+      ],
+      "id": "5f972cc7-d37e-4076-ad63-718e0a0de9d1",
+      "name": "Execute a SQL query4",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawText = $json.output[0].content[0].text;\nconst cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\nconst data = JSON.parse(cleanText);\n\nreturn {\n  json: {\n    ...data,\n    session_id: $('Edit Fields').first().json.session.id\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9040,
+        4128
+      ],
+      "id": "618b271f-4f37-44ff-b491-2b542ae69df4",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"output\": {{ JSON.stringify($('Agente General').item.json.output[0].content[0].text) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        10224,
+        3904
+      ],
+      "id": "81ad96ac-674f-4017-8e9c-0af1dec87d9f",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_messages (session_id, role, content, created_at)\nVALUES (md5($1)::uuid, 'assistant', $2, NOW());",
+        "options": {
+          "queryReplacement": "={{ [$('Edit Fields').first().json.session.id, $json.output[0].content[0].text] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        10064,
+        3904
+      ],
+      "id": "b191b5b9-5b5d-4e2b-8dba-2c8b900d3e1e",
+      "name": "Execute a SQL query3",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5.4-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-5.4-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "# IDENTIDAD\nEres el Asistente General de un CRM Inteligente Financiero.\nEres el ÚNICO agente que habla con el usuario.\n\n# OBJETIVO PRINCIPAL\n1) Recordar TODO lo que el usuario ya dijo (historial + bloque crm).\n2) NUNCA repetir preguntas ya respondidas.\n3) Dar orientación práctica: opciones y caminos financieros alineados a su perfil.\n4) Solo preguntar lo mínimo imprescindible si aún falta un dato crítico.\n\n# MEMORIA (OBLIGATORIA)\nRecibes:\n- Historial de la conversación\n- Bloque \"crm\" (datos ya guardados: presupuesto, riesgo, objetivo, horizonte, tipo)\n- Análisis \"commercial\" y \"education\"\n\nReglas:\n- Si un dato aparece en historial O en crm (valor distinto de null), ese dato YA se conoce.\n- NUNCA vuelvas a preguntarlo.\n- Si \"commercial.missing_information\" incluye un dato que ya está en crm/historial, IGNÓRALO.\n- Antes de preguntar, recorre mentalmente el historial: si el usuario ya contestó, no lo pidas.\n\n# CUÁNDO AVANZAR A OPCIONES (NO PREGUNTAR MÁS)\nSi ya conoces AL MENOS 2 de estos:\n- presupuesto / capital (investment_budget)\n- perfil de riesgo (risk_profile)\n- horizonte (investment_horizon)\n- objetivo financiero (financial_goal)\n\nENTONCES:\n- Confirma en 1 frase lo que ya sabes.\n- Ofrece 2 o 3 OPCIONES financieras concretas (educativas, no promesas).\n- Explica para quién encaja cada opción (riesgo/horizonte).\n- Sugiere un siguiente paso claro (ej. profundizar en una opción, o hablar con un asesor).\n- Como máximo UNA pregunta opcional al final, y solo si aporta (ej. \"¿Cuál de estas tres te interesa más?\").\n- NO hagas otra ronda de descubrimiento.\n\nEjemplos de opciones (adáptalas al perfil; no inventes marcas ni rentabilidades):\n- Conservadora: liquidez / fondos monetarios / instrumentos de bajo riesgo (si horizonte corto o riesgo bajo).\n- Moderada: mezcla diversificada (fondos indexados / ETFs globales) para crecimiento gradual.\n- Crecimiento: mayor exposición a renta variable / ETFs, solo si riesgo y horizonte lo permiten.\n- Educación primero: ruta corta de conceptos (interés compuesto, diversificación, inflación) si el usuario es principiante.\n\n# CUÁNDO SÍ PREGUNTAR\nSolo si faltan datos críticos Y el usuario pide orientación personalizada.\nMáximo 1 pregunta por turno (nunca 2+).\nPrioridad de lo que falta: 1) objetivo 2) horizonte 3) riesgo 4) presupuesto.\nSi el mensaje es solo saludo/small talk: no interrogues; invita a contar su meta.\n\n# ESTILO\nNatural, claro, profesional, en español.\nRespuestas útiles, no interrogatorios.\nVaría el inicio (no siempre \"Perfecto\").\nNo menciones agentes internos, JSON, CRM ni \"según el contexto\".\nNo prometas rentabilidad ni garantices ganancias.\nNo inventes datos del usuario.\n\n# PROHIBIDO\n- Repetir la misma pregunta que el usuario ya respondió.\n- Pedir de nuevo presupuesto/riesgo/horizonte/objetivo si ya están en historial o crm.\n- Quedarte solo interrogando turno tras turno sin dar valor.\n- Decir que no puedes orientar cuando sí hay datos suficientes para opciones educativas."
+            },
+            {
+              "content": "==Mensaje del usuario:\n{{ $('Edit Fields').item.json.message.content }}\n\nHistorial de la conversación (YA RESPONDIDO — no volver a preguntar):\n{{ $('Leer Historial Mensajes').all().map(i => (i.json.role === 'user' ? 'Usuario' : 'Asistente') + ': ' + i.json.content).join('\\n') || 'Sin historial previo.' }}\n\nIntención del clasificador:\n{{ $('Orquestador').item.json.output[0].content[0].text }}\n\nInformación consolidada:\nComercial: {{ JSON.stringify($json.commercial) }}\nTutor: {{ JSON.stringify($json.education) }}\nCRM (datos confirmados; si no es null, NO preguntar): {{ JSON.stringify($json.crm) }}\n\nINSTRUCCIÓN FINAL:\nSi crm/historial ya tienen datos suficientes, da 2-3 opciones financieras concretas y NO repitas preguntas.\nSi falta un solo dato crítico, pide solo ese. Si no falta nada crítico, orienta."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        9776,
+        3904
+      ],
+      "id": "1ce54ce5-7bf6-4f04-a2ee-99200cbbe9ee",
+      "name": "Agente General",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawText = $json.output[0].content[0].text;\nconst cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\nconst data = JSON.parse(cleanText);\n\nconst updates = data.database_updates || {};\nconst lead = data.lead || {};\n\nreturn {\n  json: {\n    budget: updates.investment_budget ?? null,\n    risk: updates.risk_profile ?? null,\n    goal: updates.financial_goal ?? null,\n    horizon: updates.investment_horizon ?? null,\n    prospect_type: updates.prospect_type ?? lead.prospect_type ?? null,\n    priority: updates.lead_priority ?? lead.priority ?? null,\n    priority_score: updates.priority_score ?? lead.priority_score ?? null,\n    summary: data.conversation_summary ?? null,\n    session_id: $('Edit Fields').first().json.session.id\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9056,
+        3712
+      ],
+      "id": "e2cf7786-f734-48a5-8510-9a105a62a219",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fa_sessions\nSET investment_budget = COALESCE($1, investment_budget),\n    risk_profile = COALESCE($2, risk_profile),\n    financial_goal = COALESCE($3, financial_goal),\n    prospect_type = COALESCE($4, prospect_type),\n    lead_priority = COALESCE($5, lead_priority),\n    priority_score = COALESCE($6, priority_score),\n    conversation_summary = COALESCE($7, conversation_summary),\n    investment_horizon = COALESCE($9::text, investment_horizon)\nWHERE id = md5($8)::uuid;",
+        "options": {
+          "queryReplacement": "=={{ [$json.budget, $json.risk, $json.goal, $json.prospect_type, $json.priority, $json.priority_score, $json.summary, $json.session_id, $json.horizon] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        9248,
+        3760
+      ],
+      "id": "641c5ea9-ec38-4e9d-970f-f61ed0f525ed",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        8832,
+        3904
+      ],
+      "id": "e41051f5-53fc-4573-8718-927a57dbe58a",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 4,
+        "options": {
+          "includeUnpaired": true
+        }
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        9424,
+        3888
+      ],
+      "id": "876ad46d-71c0-4be2-a701-7d004462d392",
+      "name": "Merge",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const getSafeNodeData = (nodeName) => {\n  try { return $(nodeName).first().json || null; } catch (e) { return null; }\n};\n\nconst comercialRaw = getSafeNodeData('Agente Comercial');\nconst tutor = getSafeNodeData('Agente Tutor');\nconst orquestador = $('Orquestador').first().json;\nconst crm = getSafeNodeData('Leer Estado CRM') || {};\n\nconst known = {\n  investment_budget: crm.investment_budget ?? null,\n  risk_profile: crm.risk_profile ?? null,\n  financial_goal: crm.financial_goal ?? null,\n  investment_horizon: crm.investment_horizon ?? null,\n  prospect_type: crm.prospect_type ?? null,\n};\n\nlet commercial = comercialRaw;\ntry {\n  const text = comercialRaw?.output?.[0]?.content?.[0]?.text;\n  if (typeof text === 'string') {\n    const clean = text.replace(/```json/gi, '').replace(/```/g, '').trim();\n    commercial = JSON.parse(clean);\n  }\n} catch (e) { /* keep raw */ }\n\nif (commercial && typeof commercial === 'object') {\n  const missing = Array.isArray(commercial.missing_information)\n    ? commercial.missing_information.filter((item) => {\n        const s = String(item || '').toLowerCase();\n        if (known.investment_budget != null && /(presupuesto|budget|capital|monto)/.test(s)) return false;\n        if (known.risk_profile != null && /(riesgo|risk)/.test(s)) return false;\n        if (known.financial_goal != null && /(objetivo|goal|meta)/.test(s)) return false;\n        if (known.investment_horizon != null && /(horizonte|horizon|plazo|tiempo)/.test(s)) return false;\n        return true;\n      })\n    : [];\n\n  const filled = [known.investment_budget, known.risk_profile, known.financial_goal, known.investment_horizon]\n    .filter((v) => v != null && String(v).trim() !== '').length;\n\n  const ready = commercial.ready_for_options === true || filled >= 2;\n  commercial = {\n    ...commercial,\n    missing_information: ready ? [] : missing.slice(0, 1),\n    ready_for_options: ready,\n  };\n}\n\nlet userMessage = '';\ntry {\n  userMessage = $('Edit Fields').first().json.message.content;\n} catch (e) {\n  try { userMessage = $('Webhook').first().json.body.message.content; } catch (_) {}\n}\n\nreturn {\n  json: {\n    user_message: userMessage,\n    intent: orquestador?.intent || null,\n    commercial,\n    education: tutor,\n    crm: known,\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9584,
+        3920
+      ],
+      "id": "9e6d3c7a-b84f-4425-a6a7-4af3a3b61cf3",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "60c23fa3-7948-4c5d-b3c5-f0b01c860b80",
+              "leftValue": "={{ $json.orquestador.agents }}",
+              "rightValue": "COMERCIAL",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "rightType": "any"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        8496,
+        3808
+      ],
+      "id": "27f8bc50-0794-4d9c-a7b4-57f7bc3b16a6",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "765cca73-c050-4439-a342-27f784a0db12",
+              "leftValue": "={{ $json.orquestador.agents }}",
+              "rightValue": "TUTOR",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "rightType": "any"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        8480,
+        4048
+      ],
+      "id": "3a41a261-25d2-4a62-aa18-42ee0a3c1b2f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5.4-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-5.4-NANO"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "# IDENTIDAD\n\nEres el Agente Tutor de un sistema multiagente para un CRM Inteligente Financiero.\n\nNO eres un chatbot.\n\nNO hablas directamente con el usuario.\n\nNO vendes productos financieros.\n\nNO tomas decisiones comerciales.\n\nNO recomiendas inversiones personalizadas.\n\nNO actualizas el CRM.\n\nNO haces preguntas.\n\nTu única responsabilidad es generar contenido educativo preciso, claro y estructurado para que otro agente (General) pueda comunicárselo al usuario.\n\nPiensa como un profesor universitario especializado en educación financiera.\n\n---\n\n# OBJETIVO\n\nAnalizar la consulta del usuario y generar una explicación educativa objetiva, imparcial y fácil de entender.\n\nTu misión no es convencer al usuario de invertir.\n\nTu misión es ayudarle a comprender conceptos financieros para que pueda tomar decisiones informadas.\n\n---\n\n# FUENTE DEL CONTENIDO\nTodo el contenido educativo que generes debe basarse en conceptos financieros\nestándar y ampliamente aceptados (no inventes datos ni cifras).\nIndica siempre en el campo \"source\" el origen del contenido, usando: \"Futuro Academy\".\n\n----\n\n# ÁREAS DE CONOCIMIENTO\n\nPuedes responder únicamente temas relacionados con:\n\n• Educación financiera\n• Inversiones\n• Acciones\n• ETFs\n• Fondos indexados\n• Bonos\n• Diversificación\n• Riesgo financiero\n• Rentabilidad\n• Inflación\n• Interés compuesto\n• Ahorro\n• Mercados financieros\n• Portafolios\n• Análisis básico de inversiones\n\nSi la pregunta está fuera de estos temas, indícalo mediante el campo \"supported\": false.\n\n---\n\n# NIVEL EDUCATIVO\n\nDebes adaptar la explicación al nivel del usuario cuando sea posible.\n\nLos niveles posibles son:\n\nBEGINNER\n\nINTERMEDIATE\n\nADVANCED\n\nSi no existe suficiente información, utiliza BEGINNER.\n\n---\n\n# RESPONSABILIDADES\n\nDebes:\n\n• Explicar conceptos.\n• Definir términos.\n• Comparar instrumentos financieros.\n• Explicar ventajas y desventajas.\n• Explicar riesgos.\n• Explicar ejemplos sencillos.\n• Proponer recursos para seguir aprendiendo.\n\nNunca debes:\n\n• Recomendar productos específicos.\n• Decidir en qué invertir.\n• Prometer rentabilidades.\n• Garantizar ganancias.\n• Realizar asesoría financiera personalizada.\n• Inventar información.\n\n---\n\n# ESTILO\n\nLas explicaciones deben ser:\n\n• claras\n• objetivas\n• sencillas\n• neutrales\n• educativas\n• fáciles de leer\n\nEvita tecnicismos innecesarios.\n\nSi utilizas un término técnico, explícalo.\n\n---\n\n# EJEMPLOS\n\nConcepto:\n\nETF\n\nEjemplo sencillo:\n\nImagina una canasta que contiene acciones de muchas empresas.\n\nCuando compras una participación del ETF estás comprando una pequeña parte de toda esa canasta.\n\nEsto reduce el riesgo de depender de una sola empresa.\n\n---\n\nConcepto:\n\nDiversificación\n\nEjemplo sencillo:\n\nEs parecido a no guardar todos los huevos en una sola canasta.\n\nSi una inversión baja, las demás pueden ayudar a reducir las pérdidas.\n\n---\n\n# RECURSOS\n\nCuando sea apropiado, sugiere qué conceptos debería aprender después.\n\nPor ejemplo:\n\nSi explica ETF, podría sugerir aprender:\n\n• Fondos indexados\n• Diversificación\n• Riesgo\n\n---\n\n# QUIZ\n\nCuando el concepto sea educativo, genera tres preguntas cortas para verificar el aprendizaje.\n\nLas preguntas deben ser simples.\n\nNo deben tener respuestas.\n\nEjemplo:\n\n¿Qué es un ETF?\n\n¿Por qué diversificar reduce el riesgo?\n\n¿Qué diferencia existe entre un ETF y una acción?\n\n---\n\n# REGLAS\n\nNunca inventes datos.\n\nNunca prometas rentabilidad.\n\nNunca respondas preguntas comerciales.\n\nNunca determines si el usuario debe invertir.\n\nNunca escribas lenguaje conversacional.\n\nNunca saludes.\n\nNunca despidas al usuario.\n\nNunca utilices Markdown.\n\nNunca escribas texto fuera del JSON.\n\n---\n\n# FORMATO DE SALIDA\n\nSiempre responde únicamente un JSON válido.\n\nLa estructura debe ser exactamente:\n\n{\n  \"supported\": true,\n  \"topic\": \"\",\n  \"source\": \"Futuro Academy\",\n  \"level\": \"BEGINNER\",\n  \"definition\": \"\",\n  \"explanation\": \"\",\n  \"advantages\": [],\n  \"disadvantages\": [],\n  \"risks\": [],\n  \"example\": \"\",\n  \"next_topics\": [],\n  \"quiz\": [\"\", \"\", \"\"],\n  \"consent_flag\": false\n}\n\n# SEÑAL COMERCIAL\nAdemás del JSON anterior, incluye el campo \"consent_flag\": true si el usuario\nmencionó explícitamente que puede usarse su interés en este tema con fines\ncomerciales o de seguimiento (ej. \"sí, pueden contactarme sobre esto\",\n\"me interesa que me den seguimiento\"). Si no hay evidencia clara, usa false."
+            },
+            {
+              "content": "=={{\nJSON.stringify({\n    message: $('Edit Fields').item.json.message.content,\n    conversation: $('Edit Fields1').item.json.orquestador,\n    history: ($('Leer Historial Mensajes').all().map(i => (i.json.role === 'user' ? 'Usuario' : 'Asistente') + ': ' + i.json.content).join('\\n') || 'Sin historial previo.')\n}, null, 2)\n}}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        8752,
+        4128
+      ],
+      "id": "f35830e3-b31b-4a5c-99c2-4661d4959a8b",
+      "name": "Agente Tutor",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5.4-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-5.4-NANO"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "# IDENTIDAD\nEres el Agente Comercial de un CRM Inteligente Financiero.\nNO hablas con el usuario. Devuelves SOLO JSON válido (sin markdown).\n\n# OBJETIVO\n1) Extraer datos del mensaje ACTUAL y del HISTORIAL.\n2) Actualizar database_updates solo con datos nuevos.\n3) Calcular missing_information SOLO con lo que aún falta de verdad.\n4) Cuando el perfil esté suficientemente completo, indicar que ya se puede orientar (ready_for_options: true).\n\n# REGLA CRÍTICA DE MEMORIA\nRecibes \"crm\" con datos ya guardados e \"history\" con la conversación.\n- Si un campo está en crm != null → YA se conoce: NUNCA lo pongas en missing_information.\n- Si el historial ya contiene la respuesta (aunque crm aún sea null) → extráela a database_updates y NO la pongas en missing_information.\n- missing_information debe ser [] cuando ya hay suficiente contexto para orientar.\n\n# SUFICIENCIA PARA ORIENTAR\nready_for_options = true si conoces (crm + extracción de este turno + historial) al menos 2 de:\ninvestment_budget, risk_profile, investment_horizon, financial_goal.\n\nSi ready_for_options es true → missing_information DEBE ser [].\n\n# FORMATOS A DETECTAR EN HISTORIAL (ejemplos)\n- \"tengo 600\", \"600$\", \"$5,000\", \"cinco mil\" → investment_budget\n- \"riesgo bajo/medio/alto\", \"conservador\", \"agresivo\" → risk_profile\n- \"1 año\", \"largo plazo\", \"5 años\", \"corto plazo\" → investment_horizon\n- \"jubilación\", \"casa\", \"viajar\", \"hacer crecer el dinero\" → financial_goal\n- empresa/negocio → prospect_type B2B; persona → B2C\n\n# SALIDA JSON (única)\n{\n  \"lead\": {\n    \"prospect_type\": \"B2B|B2C|NO_DEFINIDO\",\n    \"priority\": \"low|medium|high\",\n    \"priority_score\": 0\n  },\n  \"database_updates\": {\n    // solo campos NUEVOS de este turno/historial que aún no estén en crm\n  },\n  \"missing_information\": [],\n  \"ready_for_options\": false,\n  \"conversation_summary\": \"resumen breve\",\n  \"notes\": \"hallazgos comerciales breves\"\n}\n\n# PROHIBIDO\n- Relistar como faltantes datos ya respondidos.\n- Pedir más de 2 items en missing_information (y 0 si ready_for_options).\n- Inventar datos.\n- Responder en texto plano (solo JSON)."
+            },
+            {
+              "content": "=={{\nJSON.stringify({\n    message: $('Edit Fields').item.json.message.content,\n    conversation: $('Edit Fields1').item.json.orquestador,\n    history: ($('Leer Historial Mensajes').all().map(i => (i.json.role === 'user' ? 'Usuario' : 'Asistente') + ': ' + i.json.content).join('\\n') || 'Sin historial previo.'),\n    crm: $('Leer Estado CRM').first().json\n}, null, 2)\n}}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        8768,
+        3712
+      ],
+      "id": "fdd86735-b31b-4e49-a8af-de40e78a7d50",
+      "name": "Agente Comercial",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5.4-nano",
+          "mode": "list",
+          "cachedResultName": "GPT-5.4-NANO"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Eres el Orquestador del sistema financiero.\nTU RESPONSABILIDAD: Analizar el mensaje del usuario (y el historial) y decidir qué agentes deben intervenir.\n\nPROHIBIDO: Conversar, saludar, o responder la consulta. Solo clasifica.\n\nDevuelve ÚNICAMENTE un JSON válido (sin markdown):\n{\n  \"intent\": \"string\",\n  \"goal\": \"string\",\n  \"agents\": [\"COMERCIAL\" | \"TUTOR\"]\n}\n\nREGLAS:\n- Saludo puro sin más info → intent GREETING y agents [].\n- Interés en invertir, presupuesto, riesgo, productos, \"qué me recomiendas\", \"opciones\" → incluye COMERCIAL y TUTOR.\n- Si el historial ya tiene datos del usuario y pide continuar / opciones / \"sí\" / \"dale\" → incluye COMERCIAL y TUTOR (para orientar, no solo preguntar).\n- Solo conceptos teóricos → TUTOR.\n- Puedes incluir ambos [\"COMERCIAL\",\"TUTOR\"]."
+            },
+            {
+              "content": "==Historial reciente:\n{{ $('Leer Historial Mensajes').all().map(i => (i.json.role === 'user' ? 'Usuario' : 'Asistente') + ': ' + i.json.content).join('\\n') || 'Sin historial previo.' }}\n\nMensaje actual del usuario:\n{{ $('Edit Fields').item.json.message.content }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        8000,
+        3888
+      ],
+      "id": "f9cbccb7-34dc-4689-a657-6f9d1cb93f3e",
+      "name": "Orquestador",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6edf7dd1-e3f1-43f6-aa3c-b3a90988338f",
+              "name": "orquestador",
+              "value": "={{ $json.output[0].content[0].text }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        8304,
+        3888
+      ],
+      "id": "8c2b00c3-055b-4dfe-8d37-bfffcb02d199",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_messages (session_id, role, content, created_at)\nVALUES (md5($1)::uuid, 'user', $2, NOW());",
+        "options": {
+          "queryReplacement": "={{ [$('Edit Fields').item.json.session.id, $('Edit Fields').item.json.message.content] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        7792,
+        3888
+      ],
+      "id": "29d2118f-1b0e-4402-82d8-9da1d3d66987",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fa_sessions (id, status)\nVALUES (md5($1)::uuid, 'active')\nON CONFLICT (id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP;",
+        "options": {
+          "queryReplacement": "={{ [$('Edit Fields').item.json.session.id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        7584,
+        3888
+      ],
+      "id": "540ac6e0-6cc3-47c1-9574-c9f96b926a60",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "=={{ JSON.stringify({\n  session: { id: $json.body.session?.id ?? $execution.id },\n  message: {\n    content: (function(raw) {\n      if (raw == null) return '';\n      if (typeof raw === 'string') return raw.trim();\n      if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);\n      if (Array.isArray(raw)) {\n        return raw.map(item => {\n          if (typeof item === 'string') return item;\n          if (item && typeof item === 'object') return item.text ?? item.content ?? '';\n          return '';\n        }).filter(Boolean).join('\\n').trim();\n      }\n      if (typeof raw === 'object') {\n        if (typeof raw.content === 'string') return raw.content.trim();\n        if (Array.isArray(raw.content)) {\n          return raw.content.map(b => (b && typeof b === 'object' ? (b.text ?? '') : b)).filter(Boolean).join('\\n').trim();\n        }\n        if (typeof raw.text === 'string') return raw.text.trim();\n      }\n      return '';\n    })($json.body.message)\n  },\n  history: $json.body.history ?? [],\n  conversation: $json.body.conversation ?? {},\n  crm: $json.body.crm ?? {},\n  memory: $json.body.memory ?? {}\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        7376,
+        3888
+      ],
+      "id": "e30f4ea8-4cbe-4133-aa7b-9f0d592a7160",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        7168,
+        3888
+      ],
+      "id": "b528d916-898a-4c03-86dc-bbe38043b259",
+      "name": "Webhook",
+      "webhookId": "00f5393d-785a-445f-b000-c9e6a6d4e528"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT investment_budget, risk_profile, financial_goal, prospect_type, investment_horizon\nFROM fa_sessions\nWHERE id = md5($1)::uuid;",
+        "options": {
+          "queryReplacement": "={{ [$('Edit Fields').item.json.session.id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        7648,
+        4112
+      ],
+      "id": "2ca8dd80-dff2-499a-b2c0-621845c4c169",
+      "name": "Leer Estado CRM",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT role, content\nFROM fa_messages\nWHERE session_id = md5($1)::uuid\nORDER BY created_at ASC\nLIMIT 40;",
+        "options": {
+          "queryReplacement": "={{ [$('Edit Fields').item.json.session.id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        7824,
+        4224
+      ],
+      "id": "03ea2634-6ca1-434e-9435-1713f5c62b43",
+      "name": "Leer Historial Mensajes",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "iwedIXMP2aKOJCbg",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute a SQL query7": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query6": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query6",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Asegurar Sesion Existe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asegurar Sesion Existe": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asistente de Seguimiento": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query3": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente General": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query4": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "No Operation, do nothing": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Agente General",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Asistente de Seguimiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Agente Comercial",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Agente Tutor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Tutor": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Comercial": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orquestador": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Orquestador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Leer Estado CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Estado CRM": {
+      "main": [
+        [
+          {
+            "node": "Leer Historial Mensajes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Leer Historial Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "475dfdb6-b07e-45bf-a6bc-b4733d4c33de",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "52e929a30496b8054358e0ad04df8506823991aec57a899d87d1e83fdcd56089"
+  },
+  "nodeGroups": [],
+  "id": "sNgYQY65aDBbJts6",
+  "tags": []
+}

@@ -11,14 +11,12 @@ const chat = useChatStore()
 const router = useRouter()
 
 onMounted(async () => {
-  await Promise.all([chat.cargarConversaciones(), crm.cargarLeads(), crm.cargarAcciones()])
+  await Promise.all([chat.cargarConversaciones(), crm.cargarLeads()])
 })
 
 const stats = computed(() => [
   { label: 'Conversaciones', value: chat.conversaciones.length, icon: '💬' },
   { label: 'Leads CRM', value: crm.leads.length, icon: '📊' },
-  { label: 'Prioridad alta', value: crm.leads.filter((l) => l.prioridad >= 60).length, icon: '🔥' },
-  { label: 'Acciones pendientes', value: crm.acciones.filter((a) => a.estado === 'pendiente').length, icon: '⏳' },
 ])
 
 function irAChat() {

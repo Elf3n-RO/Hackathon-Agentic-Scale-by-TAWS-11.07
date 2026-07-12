@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import type { Conversacion, Mensaje, LeadCRM, N8nChatResponse } from '@/types'
 import { getSupabase, useMock } from '@/services/supabase'
 import { sendToN8n, isN8nConfigured } from '@/services/n8n'
+import { clearSessionId, getSessionId, setSessionId } from '@/services/chatSession'
 import { useAuthStore } from './auth'
 import { useCrmStore } from './crm'
 import { softDeleteConversation } from '@/services/chatHistory'
@@ -65,6 +66,9 @@ export const useChatStore = defineStore('chat', () => {
     const auth = useAuthStore()
     if (!auth.user) return null
 
+    // Nueva conversación → nuevo session.id para n8n
+    clearSessionId()
+
     const nueva: Partial<Conversacion> = {
       user_id: auth.user.id,
       titulo: titulo ?? `Chat ${new Date().toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`,
@@ -107,6 +111,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function obtenerOCrearConversacion() {
+    // Asegura un session.id desde que se abre el chat
+    getSessionId()
+
     await cargarConversaciones()
     if (conversacionActiva.value && esActiva(conversacionActiva.value)) {
       const stillThere = conversaciones.value.find((c) => c.id === conversacionActiva.value!.id)
@@ -124,6 +131,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function seleccionarConversacion(conv: Conversacion) {
     conversacionActiva.value = conv
+    setSessionId(conv.id)
     mensajes.value = []
     fuenteActual.value = null
     quizActivo.value = null
@@ -311,19 +319,21 @@ export const useChatStore = defineStore('chat', () => {
         throw new Error('Configura VITE_N8N_WEBHOOK_URL en .env.local')
       }
 
-      const historial = mensajes.value.map((m) => ({
-        rol: m.rol,
-        contenido: typeof m.contenido === 'string' ? m.contenido : String(m.contenido ?? ''),
-      }))
-
+      // Mismo session.id mientras dure esta conversación (n8n reconstruye historial en servidor)
+      const sessionId = getSessionId()
       const respuesta = await sendToN8n({
         message: texto,
-        conversacionId: conv.id,
-        userId: auth.user.id,
-        historial,
+        sessionId,
       })
 
-      const localAi = pushLocal(conv.id, 'asistente', respuesta.reply, {
+      const replyText =
+        typeof respuesta.reply === 'string' ? respuesta.reply.trim() : String(respuesta.reply ?? '').trim()
+
+      if (!replyText) {
+        throw new Error('n8n respondió sin texto en "output". Revisa el nodo Respond to Webhook.')
+      }
+
+      const localAi = pushLocal(conv.id, 'asistente', replyText, {
         fuente: respuesta.fuente,
         accion: respuesta.accion,
       })
@@ -332,7 +342,7 @@ export const useChatStore = defineStore('chat', () => {
         await persistirMensaje(
           conv.id,
           'asistente',
-          respuesta.reply,
+          replyText,
           { fuente: respuesta.fuente, accion: respuesta.accion },
           localAi.id,
         )

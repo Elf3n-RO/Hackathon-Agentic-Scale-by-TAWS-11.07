@@ -1,21 +1,13 @@
 import type { N8nChatResponse } from '@/types'
+import { getSessionId } from '@/services/chatSession'
 
 const configuredUrl = (import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefined)?.trim() || ''
-// En desarrollo usamos proxy local para evitar CORS del navegador
 const webhookUrl = import.meta.env.DEV ? '/api/n8n-chat' : configuredUrl
 
-/**
- * Extrae texto plano de cualquier forma de mensaje.
- * Nunca devuelve objeto ni array.
- */
 export function toPlainText(value: unknown): string {
   if (value == null) return ''
-
   if (typeof value === 'string') return value.trim()
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
-  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
 
   if (Array.isArray(value)) {
     return value
@@ -27,71 +19,142 @@ export function toPlainText(value: unknown): string {
 
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>
-
-    // Casos comunes: { content: "..." }, { text: "..." }, { message: "..." }
-    for (const key of ['content', 'text', 'message', 'output', 'reply', 'value']) {
+    for (const key of ['text', 'content', 'output', 'reply', 'message', 'value']) {
       if (key in obj) {
         const extracted = toPlainText(obj[key])
         if (extracted) return extracted
       }
     }
-
-    // Formato tipo: [{ type: "text", text: "..." }]
-    if (Array.isArray(obj.content)) {
-      return toPlainText(obj.content)
-    }
+    if (Array.isArray(obj.content)) return toPlainText(obj.content)
   }
 
   return ''
 }
 
+function looksLikeHtmlError(text: string): boolean {
+  const t = text.trim().toLowerCase()
+  if (!t) return false
+  if (t.startsWith('<!doctype html') || t.startsWith('<html')) return true
+  if (t.includes('<pre>internal server error</pre>')) return true
+  if (t.includes('internal server error') && t.includes('<')) return true
+  return false
+}
+
 function isUsableOutput(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
+  if (looksLikeHtmlError(trimmed)) return false
   const lower = trimmed.toLowerCase()
   if (lower === 'undefined' || lower === 'null') return false
   if (lower.includes('workflow was started')) return false
+  if (lower.includes('workflow execution failed')) return false
+  // Expresión n8n sin evaluar
   if (/^\{\{\s*.+\s*\}\}$/.test(trimmed)) return false
   return true
 }
 
-function extractTextFromAgentItem(item: unknown): string | null {
-  if (!item || typeof item !== 'object') return null
-  const obj = item as Record<string, unknown>
+/** Desanida JSON doblemente stringificado: "\"{...}\"" o "{...}" */
+function unwrapJson(data: unknown, depth = 0): unknown {
+  if (depth > 5 || data == null) return data
 
-  if (Array.isArray(obj.content)) {
-    const texts: string[] = []
-    for (const block of obj.content) {
-      if (block && typeof block === 'object') {
-        const b = block as Record<string, unknown>
-        if (typeof b.text === 'string' && isUsableOutput(b.text)) texts.push(b.text.trim())
+  if (typeof data === 'string') {
+    const t = data.trim()
+    if (!t) return data
+    if (
+      (t.startsWith('{') && t.endsWith('}')) ||
+      (t.startsWith('[') && t.endsWith(']')) ||
+      (t.startsWith('"') && t.endsWith('"'))
+    ) {
+      try {
+        return unwrapJson(JSON.parse(t), depth + 1)
+      } catch {
+        return data
       }
     }
-    if (texts.length) return texts.join('\n')
+    return data
   }
 
-  if (typeof obj.text === 'string' && isUsableOutput(obj.text)) return obj.text.trim()
+  return data
+}
+
+function getProp(obj: Record<string, unknown>, name: string): unknown {
+  if (name in obj) return obj[name]
+  const found = Object.keys(obj).find((k) => k.toLowerCase() === name.toLowerCase())
+  return found ? obj[found] : undefined
+}
+
+function extractAgentText(item: unknown): string | null {
+  if (item == null) return null
+  if (typeof item === 'string') return isUsableOutput(item) ? item.trim() : null
+
+  if (Array.isArray(item)) {
+    for (const el of item) {
+      const t = extractAgentText(el)
+      if (t) return t
+    }
+    return null
+  }
+
+  if (typeof item !== 'object') return null
+  const obj = item as Record<string, unknown>
+
+  // OpenAI / LangChain agent: output[0].content[0].text
+  const content = getProp(obj, 'content')
+  if (Array.isArray(content)) {
+    const parts: string[] = []
+    for (const block of content) {
+      if (typeof block === 'string' && isUsableOutput(block)) {
+        parts.push(block.trim())
+        continue
+      }
+      if (block && typeof block === 'object') {
+        const b = block as Record<string, unknown>
+        const text = getProp(b, 'text')
+        if (typeof text === 'string' && isUsableOutput(text)) parts.push(text.trim())
+      }
+    }
+    if (parts.length) return parts.join('\n')
+  }
+
+  if (typeof content === 'string' && isUsableOutput(content)) return content.trim()
+
+  const text = getProp(obj, 'text')
+  if (typeof text === 'string' && isUsableOutput(text)) return text.trim()
+
   return null
 }
 
-function extractFromOutputField(output: unknown): string | null {
-  if (typeof output === 'string') return isUsableOutput(output) ? output.trim() : null
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      const found = extractTextFromAgentItem(item) || extractOutput(item, 1)
-      if (found) return found
+function extractFromOutput(output: unknown): string | null {
+  if (output == null) return null
+  if (typeof output === 'string') {
+    const unwrapped = unwrapJson(output)
+    if (unwrapped !== output && typeof unwrapped === 'object') {
+      return extractReply(unwrapped, 0)
     }
+    return isUsableOutput(output) ? output.trim() : null
   }
-  return extractTextFromAgentItem(output)
+  if (typeof output === 'number' || typeof output === 'boolean') {
+    return String(output)
+  }
+  return extractAgentText(output)
 }
 
-function extractOutput(data: unknown, depth = 0): string | null {
-  if (depth > 10 || data == null) return null
-  if (typeof data === 'string') return isUsableOutput(data) ? data.trim() : null
+/**
+ * Prioridad: output → reply → text → response → answer → content → choices
+ * Evita usar message.content del request echo salvo como último recurso.
+ */
+function extractReply(data: unknown, depth = 0): string | null {
+  if (depth > 12 || data == null) return null
+
+  data = unwrapJson(data)
+
+  if (typeof data === 'string') {
+    return isUsableOutput(data) ? data.trim() : null
+  }
 
   if (Array.isArray(data)) {
     for (const item of data) {
-      const found = extractOutput(item, depth + 1)
+      const found = extractReply(item, depth + 1)
       if (found) return found
     }
     return null
@@ -100,44 +163,95 @@ function extractOutput(data: unknown, depth = 0): string | null {
   if (typeof data !== 'object') return null
   const obj = data as Record<string, unknown>
 
-  if ('output' in obj) {
-    const fromOutput = extractFromOutputField(obj.output)
+  // 1) Campo output (contrato principal con n8n)
+  if ('output' in obj || Object.keys(obj).some((k) => k.toLowerCase() === 'output')) {
+    const fromOutput = extractFromOutput(getProp(obj, 'output'))
     if (fromOutput) return fromOutput
   }
 
-  const direct = extractTextFromAgentItem(obj)
-  if (direct) return direct
+  // 2) Otras claves de respuesta del asistente
+  for (const key of ['reply', 'text', 'response', 'answer', 'chatOutput', 'completion', 'generated_text']) {
+    const val = getProp(obj, key)
+    if (val === undefined) continue
+    const found = extractFromOutput(val) || extractReply(val, depth + 1)
+    if (found) return found
+  }
 
-  for (const key of ['reply', 'text', 'message', 'response', 'answer', 'content', 'result', 'data', 'body', 'json']) {
-    if (key in obj) {
-      const found = extractOutput(obj[key], depth + 1)
-      if (found) return found
+  // 3) Formato OpenAI chat completions
+  const choices = getProp(obj, 'choices')
+  if (Array.isArray(choices) && choices[0] && typeof choices[0] === 'object') {
+    const msg = (choices[0] as Record<string, unknown>).message
+    if (msg && typeof msg === 'object') {
+      const c = (msg as Record<string, unknown>).content
+      if (typeof c === 'string' && isUsableOutput(c)) return c.trim()
     }
+  }
+
+  // 4) Contenedores anidados
+  for (const key of ['data', 'body', 'json', 'result', 'payload']) {
+    const val = getProp(obj, key)
+    if (val === undefined) continue
+    const found = extractReply(val, depth + 1)
+    if (found) return found
+  }
+
+  // 5) Estructura agente directa
+  const agent = extractAgentText(obj)
+  if (agent) return agent
+
+  // 6) message solo si parece respuesta (string o content usable), no objetos session
+  const message = getProp(obj, 'message')
+  if (typeof message === 'string' && isUsableOutput(message)) return message.trim()
+  if (message && typeof message === 'object') {
+    const content = getProp(message as Record<string, unknown>, 'content')
+    if (typeof content === 'string' && isUsableOutput(content)) return content.trim()
   }
 
   return null
 }
 
 function parseN8nResponse(data: unknown, rawFallback: string): N8nChatResponse {
-  const output = extractOutput(data)
+  const output = extractReply(data)
   if (output) {
-    const meta =
+    const root =
       data && typeof data === 'object' && !Array.isArray(data)
-        ? {
-            lead: (data as Record<string, unknown>).lead as N8nChatResponse['lead'],
-            accion: (data as Record<string, unknown>).accion as string | undefined,
-            fuente: (data as Record<string, unknown>).fuente as string | undefined,
-            quiz: (data as Record<string, unknown>).quiz as N8nChatResponse['quiz'],
-          }
-        : {}
+        ? (unwrapJson(data) as Record<string, unknown>)
+        : null
+    const meta = root
+      ? {
+          lead: root.lead as N8nChatResponse['lead'],
+          accion: root.accion as string | undefined,
+          fuente: root.fuente as string | undefined,
+          quiz: root.quiz as N8nChatResponse['quiz'],
+        }
+      : {}
     return { reply: output, ...meta }
   }
 
-  if (isUsableOutput(rawFallback)) {
+  if (isUsableOutput(rawFallback) && !rawFallback.trim().startsWith('{') && !rawFallback.trim().startsWith('[')) {
     return { reply: rawFallback.trim() }
   }
 
-  throw new Error('No se pudo leer la respuesta de n8n. Revisa la pestaña Network → webhook/chat → Response.')
+  const preview = rawFallback.replace(/\s+/g, ' ').trim().slice(0, 160)
+  throw new Error(
+    preview
+      ? `No se pudo leer "output" de n8n. Respuesta: ${preview}`
+      : 'n8n respondió vacío o sin campo "output".',
+  )
+}
+
+function httpErrorMessage(status: number, raw: string): string {
+  if (status === 500 || looksLikeHtmlError(raw)) {
+    return 'El agente n8n falló (Error 500). Revisa Executions en n8n.'
+  }
+  if (status === 404) {
+    return 'Webhook n8n no encontrado (404). Verifica la URL y que el workflow esté activo.'
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return `n8n no responde (HTTP ${status}). Railway puede estar caído.`
+  }
+  const snippet = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)
+  return `Error HTTP ${status} del webhook${snippet ? `: ${snippet}` : ''}`
 }
 
 export function isN8nConfigured(): boolean {
@@ -146,9 +260,7 @@ export function isN8nConfigured(): boolean {
 
 export async function sendToN8n(payload: {
   message: unknown
-  conversacionId?: string
-  userId?: string
-  historial?: { rol?: string; role?: string; contenido?: unknown; content?: unknown }[]
+  sessionId?: string
 }): Promise<N8nChatResponse> {
   if (!isN8nConfigured()) {
     throw new Error('Falta VITE_N8N_WEBHOOK_URL en .env.local')
@@ -159,18 +271,10 @@ export async function sendToN8n(payload: {
     throw new Error('El mensaje del usuario está vacío o no es texto válido')
   }
 
-  // message.content siempre string plano.
-  // sessionId aísla la memoria del agente por conversación (si n8n lo usa).
-  const body: Record<string, unknown> = {
-    message: {
-      content: plainContent,
-    },
+  const body = {
+    session: { id: payload.sessionId || getSessionId() },
+    message: { content: plainContent },
   }
-  if (payload.conversacionId) {
-    body.sessionId = payload.conversacionId
-    body.conversacionId = payload.conversacionId
-  }
-  if (payload.userId) body.userId = payload.userId
 
   let res: Response
   try {
@@ -188,27 +292,27 @@ export async function sendToN8n(payload: {
   }
 
   const raw = await res.text()
-  let parsed: unknown = null
-  if (raw.trim()) {
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      parsed = null
-    }
-  }
-
-  try {
-    if (parsed != null || raw.trim()) {
-      return parseN8nResponse(parsed ?? raw, raw)
-    }
-  } catch {
-    /* seguir con error HTTP */
-  }
 
   if (!res.ok) {
-    const snippet = raw.slice(0, 180) || res.statusText
-    throw new Error(`Error HTTP ${res.status} del webhook: ${snippet}`)
+    throw new Error(httpErrorMessage(res.status, raw))
   }
 
-  throw new Error('El webhook respondió vacío')
+  if (looksLikeHtmlError(raw)) {
+    throw new Error(httpErrorMessage(500, raw))
+  }
+
+  if (!raw.trim()) {
+    throw new Error(
+      'n8n devolvió HTTP 200 vacío. En el Webhook usa "Respond to Webhook" (no Immediately) con body: { "output": "..." }.',
+    )
+  }
+
+  let parsed: unknown = null
+  try {
+    parsed = unwrapJson(JSON.parse(raw))
+  } catch {
+    parsed = null
+  }
+
+  return parseN8nResponse(parsed ?? raw, raw)
 }

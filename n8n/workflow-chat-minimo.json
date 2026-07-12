@@ -1,0 +1,103 @@
+{
+  "name": "SyntaxError Chat MINIMO",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-200, 0],
+      "id": "wh-min-001",
+      "name": "Webhook",
+      "webhookId": "syntaxerror-chat-min"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "user_text",
+              "value": "={{ $json.body.message.content || $json.body.message || $json.message.content || $json.message || 'Hola' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [40, 0],
+      "id": "set-min-001",
+      "name": "Normalize Message"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Eres un asistente financiero conversacional en español. Responde de forma clara, breve y útil. Puedes calificar leads B2B/B2C y explicar conceptos de Futuro Academy."
+            },
+            {
+              "content": "={{ $json.user_text }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [280, 0],
+      "id": "ai-min-001",
+      "name": "Agente IA",
+      "credentials": {
+        "openAiApi": {
+          "id": "U7150gU3UWesjCta",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ output: $json.output[0].content[0].text }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [520, 0],
+      "id": "resp-min-001",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Normalize Message", "type": "main", "index": 0 }]]
+    },
+    "Normalize Message": {
+      "main": [[{ "node": "Agente IA", "type": "main", "index": 0 }]]
+    },
+    "Agente IA": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

@@ -4,13 +4,53 @@ const configuredUrl = (import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefine
 // En desarrollo usamos proxy local para evitar CORS del navegador
 const webhookUrl = import.meta.env.DEV ? '/api/n8n-chat' : configuredUrl
 
+/**
+ * Extrae texto plano de cualquier forma de mensaje.
+ * Nunca devuelve objeto ni array.
+ */
+export function toPlainText(value: unknown): string {
+  if (value == null) return ''
+
+  if (typeof value === 'string') return value.trim()
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => toPlainText(item))
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+
+    // Casos comunes: { content: "..." }, { text: "..." }, { message: "..." }
+    for (const key of ['content', 'text', 'message', 'output', 'reply', 'value']) {
+      if (key in obj) {
+        const extracted = toPlainText(obj[key])
+        if (extracted) return extracted
+      }
+    }
+
+    // Formato tipo: [{ type: "text", text: "..." }]
+    if (Array.isArray(obj.content)) {
+      return toPlainText(obj.content)
+    }
+  }
+
+  return ''
+}
+
 function isUsableOutput(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
   const lower = trimmed.toLowerCase()
   if (lower === 'undefined' || lower === 'null') return false
   if (lower.includes('workflow was started')) return false
-  // Expresión n8n sin evaluar
   if (/^\{\{\s*.+\s*\}\}$/.test(trimmed)) return false
   return true
 }
@@ -105,36 +145,39 @@ export function isN8nConfigured(): boolean {
 }
 
 export async function sendToN8n(payload: {
-  message: string
-  conversacionId: string
-  userId: string
-  historial: { rol: string; contenido: string }[]
+  message: unknown
+  conversacionId?: string
+  userId?: string
+  historial?: { rol?: string; role?: string; contenido?: unknown; content?: unknown }[]
 }): Promise<N8nChatResponse> {
   if (!isN8nConfigured()) {
     throw new Error('Falta VITE_N8N_WEBHOOK_URL en .env.local')
   }
 
-  // Payload compatible con Edit Fields: $json.body.*
-  const body = {
-    session: {
-      id: payload.conversacionId,
-      user_id: payload.userId,
-    },
-    conversation: {
-      intent: 'UNKNOWN',
-      state: 'START',
-      goal: '',
-    },
+  // message.content SIEMPRE string plano
+  const plainContent = toPlainText(payload.message)
+  if (!plainContent) {
+    throw new Error('El mensaje del usuario está vacío o no es texto válido')
+  }
+
+  const history = (payload.historial ?? []).map((m) => ({
+    role: m.role ?? (m.rol === 'asistente' ? 'assistant' : 'user'),
+    content: toPlainText(m.content ?? m.contenido),
+  })).filter((m) => m.content.length > 0)
+
+  const body: {
+    session?: { id: string }
+    message: { content: string }
+    history: { role: string; content: string }[]
+  } = {
     message: {
-      role: 'user',
-      content: payload.message,
+      content: plainContent, // siempre string plano
     },
-    history: payload.historial.map((m) => ({
-      role: m.rol === 'asistente' ? 'assistant' : 'user',
-      content: m.contenido,
-    })),
-    crm: { profile: {}, summary: {}, lead: {} },
-    memory: { conversation: {}, flags: {} },
+    history,
+  }
+
+  if (payload.conversacionId) {
+    body.session = { id: String(payload.conversacionId) }
   }
 
   let res: Response
@@ -162,7 +205,6 @@ export async function sendToN8n(payload: {
     }
   }
 
-  // Si hay texto usable, lo mostramos aunque el status no sea 200
   try {
     if (parsed != null || raw.trim()) {
       return parseN8nResponse(parsed ?? raw, raw)

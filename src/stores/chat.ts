@@ -230,7 +230,7 @@ export const useChatStore = defineStore('chat', () => {
 
       const historial = mensajes.value.map((m) => ({
         rol: m.rol,
-        contenido: m.contenido,
+        contenido: typeof m.contenido === 'string' ? m.contenido : String(m.contenido ?? ''),
       }))
 
       const respuesta = await sendToN8n({

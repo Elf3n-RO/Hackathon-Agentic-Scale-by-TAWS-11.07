@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { Conversacion, Mensaje, Profile } from '@/types'
 import {
@@ -12,6 +13,7 @@ import {
 import { fetchConversationMessages, fetchUserConversations } from '@/services/chatHistory'
 
 const auth = useAuthStore()
+const router = useRouter()
 
 const profiles = ref<Profile[]>([])
 const filteredProfiles = ref<Profile[]>([])
@@ -196,9 +198,14 @@ async function submitReview(
 }
 
 onMounted(async () => {
+  if (!auth.isAdmin) {
+    router.replace('/app')
+    return
+  }
+
   await Promise.all([loadUsers(), loadFollowups()])
   pollTimer = setInterval(() => {
-    loadFollowups()
+    if (auth.isAdmin) loadFollowups()
   }, 30000)
 })
 
@@ -234,7 +241,7 @@ onUnmounted(() => {
       </div>
       <div class="stat-mini card">
         <span class="stat-num">{{ stats.pendientes }}</span>
-        <span class="text-sm text-muted">Followups pendientes</span>
+        <span class="text-sm text-muted">Hitos importantes</span>
       </div>
     </div>
 
@@ -301,6 +308,10 @@ onUnmounted(() => {
       <section class="card">
         <div class="card-header">Seguimiento pendiente (IA)</div>
         <div class="card-body">
+          <p class="followup-hint text-sm text-muted">
+            Solo se muestran propuestas en hitos comerciales importantes: decisión de compra,
+            solicitud de reunión, derivación a especialista u objeciones relevantes.
+          </p>
           <p v-if="actionMessage" class="ok-msg">{{ actionMessage }}</p>
           <p v-if="followupError" class="form-error">{{ followupError }}</p>
           <p v-if="loadingFollowups && !followups.length" class="text-muted text-sm">Cargando propuestas...</p>
@@ -357,7 +368,7 @@ onUnmounted(() => {
           </div>
 
           <p v-if="!loadingFollowups && !followups.length" class="text-muted text-sm text-center">
-            No hay propuestas pendientes.
+            No hay hitos comerciales pendientes de revisión.
           </p>
         </div>
       </section>
@@ -518,6 +529,14 @@ onUnmounted(() => {
   text-transform: uppercase;
   color: var(--color-gray-500);
   letter-spacing: 0.04em;
+}
+
+.followup-hint {
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  background: rgba(56, 189, 248, 0.08);
+  border-radius: var(--radius-sm);
+  line-height: 1.45;
 }
 
 .followup-card {

@@ -4,6 +4,7 @@ import type { User } from '@supabase/supabase-js'
 import type { Profile, UserRole } from '@/types'
 import { getSupabase, useMock } from '@/services/supabase'
 import { formatSupabaseError, isEmailConfirmationRequired } from '@/utils/errors'
+import { getEmailRedirectTo } from '@/config/appUrl'
 
 const MOCK_USERS: Record<string, { password: string; profile: Profile }> = {
   'cliente@demo.com': {
@@ -85,6 +86,19 @@ export const useAuthStore = defineStore('auth', () => {
     profile.value = data as Profile
   }
 
+  async function applySessionUser(sessionUser: User) {
+    user.value = sessionUser
+    await fetchProfile(sessionUser.id)
+    if (!profile.value) {
+      await ensureProfile(
+        sessionUser.id,
+        sessionUser.user_metadata?.full_name ?? '',
+        sessionUser.email ?? '',
+        normalizeRole(sessionUser.user_metadata?.role),
+      )
+    }
+  }
+
   async function init() {
     if (initialized) return
     initialized = true
@@ -99,18 +113,30 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       const supabase = getSupabase()
-      const { data: { session } } = await supabase.auth.getSession()
 
-      if (session?.user) {
-        user.value = session.user
-        await fetchProfile(session.user.id)
+      // Si llegamos con ?code= (confirmación PKCE) en cualquier ruta, intercambiar sesión
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('code') && !window.location.pathname.includes('/auth/callback')) {
+        await supabase.auth.exchangeCodeForSession(window.location.href)
       }
 
-      supabase.auth.onAuthStateChange(async (_event, session) => {
-        user.value = session?.user ?? null
-        if (session?.user) {
-          await fetchProfile(session.user.id)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (session?.user) {
+        await applySessionUser(session.user)
+      }
+
+      supabase.auth.onAuthStateChange(async (event, nextSession) => {
+        if (nextSession?.user) {
+          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+            await applySessionUser(nextSession.user)
+          } else {
+            user.value = nextSession.user
+          }
         } else {
+          user.value = null
           profile.value = null
         }
       })
@@ -145,15 +171,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     user.value = data.user
     try {
-      await fetchProfile(data.user.id)
-      if (!profile.value) {
-        await ensureProfile(
-          data.user.id,
-          data.user.user_metadata?.full_name ?? '',
-          data.user.email ?? email,
-          (normalizeRole(data.user.user_metadata?.role)),
-        )
-      }
+      await applySessionUser(data.user)
     } catch (e) {
       error.value = formatSupabaseError(e)
       return false
@@ -174,11 +192,14 @@ export const useAuthStore = defineStore('auth', () => {
     const safeRole = normalizeRole(role)
 
     try {
+      const emailRedirectTo = getEmailRedirectTo()
+
       const { data, error: err } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { full_name: fullName, role: safeRole },
+          emailRedirectTo,
         },
       })
 
@@ -193,17 +214,13 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       if (isEmailConfirmationRequired(data.session, data.user)) {
-        infoMessage.value = 'Cuenta creada. Revisa tu correo para confirmar antes de iniciar sesión.'
+        infoMessage.value =
+          'Cuenta creada. Revisa tu correo y pulsa el enlace de confirmación. Te llevará de vuelta a la app para entrar.'
         return true
       }
 
-      user.value = data.user
-
       try {
-        await fetchProfile(data.user.id)
-        if (!profile.value) {
-          await ensureProfile(data.user.id, fullName, email, safeRole)
-        }
+        await applySessionUser(data.user)
       } catch (e) {
         error.value = formatSupabaseError(e)
         return false
@@ -283,6 +300,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     userName,
     init,
+    applySessionUser,
     signIn,
     signUp,
     signOut,

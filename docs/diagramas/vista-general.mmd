@@ -1,0 +1,46 @@
+﻿flowchart TB
+  subgraph Cliente["Cliente (Navegador)"]
+    SPA["Vue 3 SPA<br/>Vite + TypeScript"]
+  end
+
+  subgraph Vercel["Vercel (Producción)"]
+    Static["dist/ — assets estáticos"]
+    FnChat["api/n8n-chat.ts"]
+    FnPending["api/followup/pending.ts"]
+    FnReview["api/followup/review.ts"]
+  end
+
+  subgraph Supabase["Supabase"]
+    Auth["Auth (PKCE + email)"]
+    DB["PostgreSQL<br/>profiles, conversaciones, mensajes, leads_crm"]
+    RLS["Row Level Security"]
+  end
+
+  subgraph N8N["n8n (Railway)"]
+    WHChat["POST /webhook/chat"]
+    WHPending["GET /webhook/followup/pending"]
+    WHReview["POST /webhook/followup/review"]
+    Agents["Orquestador + Agentes IA"]
+    PGn8n["Postgres n8n<br/>fa_sessions, fa_followups, historial"]
+    OpenAI["OpenAI API"]
+  end
+
+  SPA --> Static
+  SPA -->|"Auth JWT"| Auth
+  SPA -->|"CRUD chat/historial"| DB
+  SPA -->|"/api/n8n-chat"| FnChat
+  SPA -->|"/api/followup/*"| FnPending
+  SPA --> FnReview
+
+  FnChat --> WHChat
+  FnPending --> WHPending
+  FnReview --> WHReview
+
+  WHChat --> Agents
+  Agents --> OpenAI
+  Agents --> PGn8n
+  WHPending --> PGn8n
+  WHReview --> PGn8n
+
+  Auth --> DB
+  DB --> RLS

@@ -1,0 +1,24 @@
+﻿sequenceDiagram
+  actor U as Usuario (cliente)
+  participant CV as ChatView.vue
+  participant CS as chat store
+  participant SS as chatSession.ts
+  participant SB as Supabase
+  participant API as /api/n8n-chat
+  participant N8 as n8n workflow
+  participant CRM as crm store
+
+  U->>CV: Escribe mensaje
+  CV->>CS: enviarMensaje(texto)
+  CS->>CS: pushLocal (optimista UI)
+  CS->>SB: INSERT mensajes (usuario)
+  CS->>SS: getSessionId()
+  CS->>API: sendToN8n({ session, message })
+  API->>N8: POST webhook/chat
+  Note over N8: Orquestador → Comercial/Tutor → General → respuesta
+  N8-->>API: { output, lead?, quiz? }
+  API-->>CS: JSON respuesta
+  CS->>CS: parse reply + pushLocal IA
+  CS->>SB: INSERT mensajes (asistente)
+  CS->>CRM: upsertLeadFromChat (si hay lead)
+  CS-->>CV: Actualiza UI
